@@ -567,6 +567,8 @@ CheckAndStandUp(const string &name, const NodeConfig &config, Brain *_brain) : S
 
 private:
     Brain *brain;
+    int _lastMode = -1;
+    RobotRecoveryState _lastState = RobotRecoveryState::IS_READY;
 };
 
 
