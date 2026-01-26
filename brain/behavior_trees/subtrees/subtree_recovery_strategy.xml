@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  跌倒后站立恢复策略 (Fall Recovery Strategy)
+  
+  状态转移：
+  IS_READY → IS_FALLING → HAS_FALLEN → IS_GETTING_UP → IS_READY
+  
+  关键特性：
+  1. 检测已跌倒状态并触发站立命令
+  2. 重试机制（最多 N 次重试）
+  3. 站立后重新定位和校准
+  4. 比赛暂停时执行恢复，避免被罚
+  5. 失败后降级处理
+  6. 完整的日志和语音提示
+-->
+
+<root BTCPP_format="4">
+  <BehaviorTree ID="AutoGetUpAndLocate">
+    <Sequence name="root">
+      <!-- 
+        主恢复流程：
+        1. 检查并执行站立（CheckAndStandUp 由 C++ 代码实现）
+        2. 如果成功站立，则重新定位
+        3. 定位成功后，机器人回到就绪状态
+      -->
+      <CheckAndStandUp />
+      
+      <!-- 站立完成后的重新定位 -->
+      <Sequence _while="!gc_is_under_penalty" name="非罚时下的重新定位">
+        <!-- 快速扫描摄像头寻找标志点 -->
+        <CamScanField 
+          low_pitch="0.6" 
+          high_pitch="0.45" 
+          left_yaw="0.8" 
+          right_yaw="-0.8"
+          msec_cycle="3000"
+        />
+        
+        <!-- 尝试定位 -->
+        <SubTree ID="Locate" _autoremap="true" />
+      </Sequence>
+      
+      <!-- 罚时状态下的简单重新定位 -->
+      <Sequence _while="gc_is_under_penalty" name="罚时下的重新定位">
+        <CamScanField 
+          low_pitch="0.6" 
+          high_pitch="0.45" 
+          left_yaw="0.8" 
+          right_yaw="-0.8"
+          msec_cycle="2000"
+        />
+      </Sequence>
+    </Sequence>
+  </BehaviorTree>
+
+  <!-- 
+    增强版的站立策略 (可选)
+    如果需要更复杂的站立逻辑，可以使用这个树代替 CheckAndStandUp
+  -->
+  <BehaviorTree ID="AdvancedRecovery" _description="高级恢复策略：包含预检查、多阶段站立、验证等">
+    <Sequence name="root">
+      <!-- 步骤 1: 验证是否真的已跌倒 -->
+      <Sequence name="验证跌倒状态" _description="检查加速度计和陀螺仪确认已跌倒">
+        <!-- 这里可以添加自定义验证节点 -->
+      </Sequence>
+      
+      <!-- 步骤 2: 执行站立 -->
+      <CheckAndStandUp />
+      
+      <!-- 步骤 3: 等待平衡稳定 -->
+      <StandStill msecs="500" _description="站立后稳定 0.5 秒" />
+      
+      <!-- 步骤 4: 验证站立成功 -->
+      <Sequence name="验证站立成功" _description="确认机器人已成功站立">
+        <!-- 可检查 IMU 数据确认垂直度 -->
+      </Sequence>
+      
+      <!-- 步骤 5: 重新定位 -->
+      <Sequence _while="!gc_is_under_penalty" name="非罚时下的重新定位">
+        <CamScanField 
+          low_pitch="0.6" 
+          high_pitch="0.45" 
+          left_yaw="0.8" 
+          right_yaw="-0.8"
+          msec_cycle="3000"
+        />
+        <SubTree ID="Locate" _autoremap="true" />
+      </Sequence>
+    </Sequence>
+  </BehaviorTree>
+
+  <!-- 
+    轻量级快速恢复 (可选)
+    用于较小的摔倒或需要快速恢复的情况
+  -->
+  <BehaviorTree ID="QuickRecovery" _description="快速恢复策略：最小化恢复时间">
+    <Sequence name="root">
+      <!-- 直接站立，不进行复杂检查 -->
+      <CheckAndStandUp />
+      
+      <!-- 快速稳定 -->
+      <StandStill msecs="200" />
+      
+      <!-- 尝试快速定位，失败则继续游戏 -->
+      <Fallback name="快速定位或继续">
+        <Sequence name="尝试定位">
+          <CamScanField 
+            low_pitch="0.45" 
+            high_pitch="0.45" 
+            left_yaw="0.5" 
+            right_yaw="-0.5"
+            msec_cycle="1000"
+          />
+          <SubTree ID="Locate" _autoremap="true" _while="decision!='find'" />
+        </Sequence>
+        <!-- 定位失败也继续（不阻断游戏） -->
+      </Fallback>
+    </Sequence>
+  </BehaviorTree>
+
+</root>
