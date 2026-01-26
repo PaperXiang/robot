@@ -28,6 +28,8 @@ brain_node:
       cooperation: 
         enable_role_switch: false 
         ball_control_cost_threshold: 20.0 
+      enable_auto_standup: true       # 是否启用自动站立
+      enable_recovery_downgrade: true # 重试失败时是否切换手动模式
 
     obstacle_avoidance:
       depth_sample_step: 16 
@@ -68,7 +70,9 @@ brain_node:
       img_interval: 1 
     
     recovery:
-      retry_max_count: 2
+      retry_max_count: 3              # 最大重试次数
+      standup_timeout: 5000           # 单次站立超时时间 (ms)
+      reposition_timeout: 10000       # 重新定位超时时间 (ms)
 
     vision:
         image_topic: "/camera/camera/color/image_raw" 

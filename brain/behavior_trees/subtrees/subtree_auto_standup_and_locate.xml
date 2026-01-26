@@ -1,7 +1,23 @@
 <root BTCPP_format="4" >
    <BehaviorTree ID="AutoGetUpAndLocate">
       <Sequence name="root">
-         <CheckAndStandUp />
+        <!-- 检测跌倒并执行站立 -->
+        <CheckAndStandUp />
+        
+        <!-- 非罚时：快速扫描并重新定位 -->
+        <Sequence _while="!gc_is_under_penalty" name="重新定位">
+          <CamScanField low_pitch="0.6" high_pitch="0.45" 
+                        left_yaw="0.8" right_yaw="-0.8"
+                        msec_cycle="3000" />
+          <SubTree ID="Locate" _autoremap="true" />
+        </Sequence>
+        
+        <!-- 罚时：仅进行摄像头扫描 -->
+        <Sequence _while="gc_is_under_penalty" name="罚时扫描">
+          <CamScanField low_pitch="0.6" high_pitch="0.45" 
+                        left_yaw="0.8" right_yaw="-0.8"
+                        msec_cycle="2000" />
+        </Sequence>
       </Sequence>
    </BehaviorTree>
 </root>
