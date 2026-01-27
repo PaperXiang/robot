@@ -104,10 +104,13 @@ public:
      */
     int standUp();
 
-
     /**
-     * @brief 进阻尼
+     * @brief 快速起身 - 优化起身速度
+     * @details 通过预调整姿态加速起身过程，适用于比赛中需要快速恢复的场景
+     * @return int , 0 表示执行成功
      */
+    int quickStandUp();
+
     int enterDamping();
 
     double msecsToCollide(double vx, double vy, double vtheta, double maxTime=10000);

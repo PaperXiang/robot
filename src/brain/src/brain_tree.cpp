@@ -60,6 +60,7 @@ void BrainTree::init()
     REGISTER_BUILDER(WaveHand)
     REGISTER_BUILDER(MoveHead)
     REGISTER_BUILDER(CheckAndStandUp)
+    REGISTER_BUILDER(QuickStandUp)
     REGISTER_BUILDER(Assist)
 
     // 注册 Locator 相关的节点
@@ -1450,6 +1451,39 @@ NodeStatus CheckAndStandUp::tick()
 
     return NodeStatus::SUCCESS;
 }
+
+// 快速起身节点 - 优化起身速度
+NodeStatus QuickStandUp::tick()
+{
+    brain->log->setTimeNow();
+    brain->log->log("recovery/quick_standup", 
+                    rerun::TextLog("QuickStandUp node ticked"));
+    
+    // 检查是否需要起身
+    if (brain->tree->getEntry<bool>("gc_is_under_penalty") || 
+        brain->data->currentRobotModeIndex == 1) {
+        brain->log->log("recovery/quick_standup", 
+                        rerun::TextLog("Skip: under penalty or already standing"));
+        return NodeStatus::SUCCESS;
+    }
+    
+    // 检查是否已跌倒
+    if (brain->data->recoveryState != RobotRecoveryState::HAS_FALLEN) {
+        return NodeStatus::SUCCESS;
+    }
+    
+    // 执行快速起身
+    if (brain->data->currentRobotModeIndex == 3) {
+        brain->log->log("recovery/quick_standup", 
+                        rerun::TextLog("Executing quick stand up"));
+        brain->client->quickStandUp();
+        brain->speak("Quick recovery");
+        return NodeStatus::SUCCESS;
+    }
+    
+    return NodeStatus::SUCCESS;
+}
+
 
 
 NodeStatus CalibrateOdom::tick()

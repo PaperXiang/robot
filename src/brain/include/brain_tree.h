@@ -569,6 +569,22 @@ private:
     Brain *brain;
 };
 
+// 快速起身节点 - 优化起身速度
+class QuickStandUp : public SyncActionNode
+{
+public:
+    QuickStandUp(const string &name, const NodeConfig &config, Brain *_brain) : SyncActionNode(name, config), brain(_brain) {}
+
+    static PortsList providedPorts() {
+        return {};
+    }
+
+    NodeStatus tick() override;
+
+private:
+    Brain *brain;
+};
+
 
 class GoToFreekickPosition : public StatefulActionNode
 {

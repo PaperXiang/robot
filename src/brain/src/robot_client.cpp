@@ -48,6 +48,33 @@ int RobotClient::standUp()
     return call(msg);
 }
 
+int RobotClient::quickStandUp()
+{
+    // 快速起身策略：
+    // 1. 先发送起身指令（底层SDK会处理）
+    // 2. 记录起身开始时间，用于后续快速恢复控制
+    
+    brain->log->setTimeNow();
+    brain->log->log("RobotClient/quickStandUp",
+                    rerun::TextLog("Executing quick stand up sequence"));
+    
+    // 发送起身指令
+    booster_interface::msg::BoosterApiReqMsg msg;
+    msg.api_id = static_cast<int64_t>(booster::robot::b1::LocoApiId::kGetUp);
+    nlohmann::json body;
+    msg.body = body.dump();
+    
+    int result = call(msg);
+    
+    if (result == 0) {
+        brain->log->log("RobotClient/quickStandUp",
+                        rerun::TextLog("Quick stand up command sent successfully"));
+    }
+    
+    return result;
+}
+
+
 
 int RobotClient::enterDamping()
 {
