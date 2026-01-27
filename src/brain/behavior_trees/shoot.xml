@@ -1,0 +1,18 @@
+<!-- 用于射门演示 -->
+
+<root BTCPP_format="4" >
+    <include path="./subtrees/subtree_cam_find_and_track_ball.xml" />
+    <include path="./subtrees/subtree_striker_play.xml" />
+
+     <BehaviorTree ID="MainTree">
+        <Sequence name="root">
+            <ReactiveSequence>
+               <SubTree ID="CamFindAndTrackBall" _autoremap="true" _while="control_state>=2" />
+               <Sequence _while="control_state==3" >
+                  <!-- 直接使用前锋逻辑，包含寻球、追球、调整、射门 -->
+                  <SubTree ID="StrikerPlay" _autoremap="true" />
+               </Sequence>
+            </ReactiveSequence>
+        </Sequence>
+     </BehaviorTree>
+</root>
