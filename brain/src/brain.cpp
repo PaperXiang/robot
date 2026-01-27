@@ -249,47 +249,37 @@ void Brain::loadConfig()
     string visionConfigPath, visionConfigLocalPath;
     get_parameter("vision_config_path", visionConfigPath);
     get_parameter("vision_config_local_path", visionConfigLocalPath);
-
-    YAML::Node vConfig;
-    bool vConfigLoaded = false;
-    if (!visionConfigPath.empty() && filesystem::exists(visionConfigPath)) {
-        try {
-            vConfig = YAML::LoadFile(visionConfigPath);
-            if (filesystem::exists(visionConfigLocalPath)) {
-                YAML::Node vConfigLocal = YAML::LoadFile(visionConfigLocalPath);
-                MergeYAML(vConfig, vConfigLocal);
-            }
-
-            config->camfx = vConfig["camera"]["intrin"]["fx"].as<double>();
-            config->camfy = vConfig["camera"]["intrin"]["fy"].as<double>();
-            config->camcx = vConfig["camera"]["intrin"]["cx"].as<double>();
-            config->camcy = vConfig["camera"]["intrin"]["cy"].as<double>();
-
-            auto extrin = vConfig["camera"]["extrin"];
-            for (int i = 0; i < 4; ++i) {
-                for (int j = 0; j < 4; ++j) {
-                    config->camToHead(i, j) = extrin[i][j].as<double>();
-                }
-            }
-
-            prtDebug(format("camfx: %f, camfy: %f, camcx: %f, camcy: %f", config->camfx, config->camfy, config->camcx, config->camcy));
-            string str_cam2head = "camToHead: \n";
-            for (int i = 0; i < 4; ++i) {
-                for (int j = 0; j < 4; ++j) {
-                    str_cam2head += format("%.3f ", config->camToHead(i, j));
-                }
-                str_cam2head += "\n";
-            }
-            prtDebug(str_cam2head);
-
-            vConfigLoaded = true;
-        }
-        catch (const std::exception &e) {
-            RCLCPP_WARN(get_logger(), "Failed to load vision config %s: %s. Using defaults.", visionConfigPath.c_str(), e.what());
-        }
-    } else {
-        RCLCPP_WARN(get_logger(), "vision_config_path '%s' not provided or not found — using default camera parameters.", visionConfigPath.c_str());
+    if (!filesystem::exists(visionConfigPath)) {
+        // 报错然后退出
+        RCLCPP_ERROR(get_logger(), "vision_config_path %s not exists", visionConfigPath.c_str());
+        exit(1);
     }
+    // else
+    YAML::Node vConfig = YAML::LoadFile(visionConfigPath);
+    if (filesystem::exists(visionConfigLocalPath)) {
+        YAML::Node vConfigLocal = YAML::LoadFile(visionConfigLocalPath);
+        MergeYAML(vConfig, vConfigLocal);
+    }
+    config->camfx = vConfig["camera"]["intrin"]["fx"].as<double>();
+    config->camfy = vConfig["camera"]["intrin"]["fy"].as<double>();
+    config->camcx = vConfig["camera"]["intrin"]["cx"].as<double>();
+    config->camcy = vConfig["camera"]["intrin"]["cy"].as<double>();
+
+    auto extrin = vConfig["camera"]["extrin"];
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            config->camToHead(i, j) = extrin[i][j].as<double>();
+        }
+    }
+    prtDebug(format("camfx: %f, camfy: %f, camcx: %f, camcy: %f", config->camfx, config->camfy, config->camcx, config->camcy));
+    string str_cam2head = "camToHead: \n";
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            str_cam2head += format("%.3f ", config->camToHead(i, j));
+        }
+        str_cam2head += "\n";
+    }
+    prtDebug(str_cam2head);
 
 
     config->handle();

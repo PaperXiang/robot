@@ -388,7 +388,8 @@ NodeStatus Chase::tick()
     smoothVy = smoothVy * 0.7 + vy * 0.3;
     smoothVtheta = smoothVtheta * 0.7 + vtheta * 0.3;
 
-    brain->client->setVelocity(smoothVx, smoothVy, smoothVtheta, false, false, false);
+    // brain->client->setVelocity(smoothVx, smoothVy, smoothVtheta, false, false, false);
+    brain->client->setVelocity(vx, vy, vtheta, false, false, false);
     return NodeStatus::SUCCESS;
 }
 
@@ -1385,8 +1386,8 @@ NodeStatus GoBackInField::tick()
 
     
     double dir_r = toPInPI(dir - brain->data->robotPoseToField.theta);
-    vx = 0.3 * cos(dir_r);
-    vy = 0.3 * sin(dir_r);
+    vx = 0.4 * cos(dir_r);
+    vy = 0.4 * sin(dir_r);
     brain->client->setVelocity(vx, vy, 0, false, false, false);
     return NodeStatus::SUCCESS;
 }
@@ -1413,122 +1414,38 @@ NodeStatus MoveHead::tick()
 
 NodeStatus CheckAndStandUp::tick()
 {
-    /**
-     * 跌倒恢复状态机逻辑
-     * 优化点：
-     * 1. 减少冗余日志，仅在状态变更时输出
-     * 2. 状态判断逻辑简化
-     */
-    
-    // 获取配置参数 (假定参数在运行时不会频繁变化，但为了实时性仍每次获取，依靠ROS2参数缓存)
-    int retryMaxCount = brain->get_parameter("recovery.retry_max_count").get_value<int>();
-    bool autoRecoveryEnabled = brain->get_parameter("strategy.enable_auto_standup").get_value<bool>();
-    
-    // 状态别名
-    auto curState = brain->data->recoveryState;
-    auto curMode = brain->data->currentRobotModeIndex;
-    
-    // 仅在状态改变时打印日志
-    if (curState != _lastState || curMode != _lastMode) {
-         brain->log->setTimeNow();
-         string stateStr;
-         switch (curState) {
-             case RobotRecoveryState::IS_READY: stateStr = "IS_READY"; break;
-             case RobotRecoveryState::IS_FALLING: stateStr = "IS_FALLING"; break;
-             case RobotRecoveryState::HAS_FALLEN: stateStr = "HAS_FALLEN"; break;
-             case RobotRecoveryState::IS_GETTING_UP: stateStr = "IS_GETTING_UP"; break;
-             default: stateStr = "UNKNOWN";
-         }
-         brain->log->log("recovery", rerun::TextLog( format(
-            "[recovery] State:%s Mode:%d Retry:%d/%d Performed:%d Auto:%d",
-            stateStr.c_str(), curMode,
-            brain->data->recoveryPerformedRetryCount, retryMaxCount,
-            brain->data->recoveryPerformed, autoRecoveryEnabled
-         )));
-         _lastState = curState;
-         _lastMode = curMode;
-    }
-
-    auto log = [=](string msg, bool highlight = false) {
-        brain->log->setTimeNow();
-        string prefix = highlight ? "[RECOVERY] " : "[recovery] ";
-        brain->log->log("recovery", rerun::TextLog(prefix + msg));
-    };
-
-    // === 情况 1: 比赛暂停或罚时状态 ===
-    // 在这些状态下不应站立，重置恢复计数
-    if (brain->tree->getEntry<bool>("gc_is_under_penalty") || curMode == 1) {
-        if (brain->data->recoveryPerformedRetryCount > 0 || brain->data->recoveryPerformed) {
-            log("Game paused/penalty: Reset recovery", true);
-            brain->data->recoveryPerformedRetryCount = 0;
-            brain->data->recoveryPerformed = false;
-        }
+    if (brain->tree->getEntry<bool>("gc_is_under_penalty") || brain->data->currentRobotModeIndex == 1) {
+        brain->data->recoveryPerformedRetryCount = 0;
+        brain->data->recoveryPerformed = false;
+        brain->log->log("recovery", rerun::TextLog("reset recovery"));
         return NodeStatus::SUCCESS;
     }
+    brain->log->log("recovery", rerun::TextLog(format("Recovery retry count: %d, recoveryPerformed: %d recoveryState: %d currentRobotModeIndex: %d", brain->data->recoveryPerformedRetryCount, brain->data->recoveryPerformed, brain->data->recoveryState, brain->data->currentRobotModeIndex)));
 
-    // === 情况 2: 检测已跌倒状态并触发站立 ===
-    // 条件：未正在执行 && 已跌倒 && 模式匹配 && 次数未超 && 开启自动
     if (!brain->data->recoveryPerformed &&
-        curState == RobotRecoveryState::HAS_FALLEN &&
-        curMode == 3 && 
-        brain->data->recoveryPerformedRetryCount < retryMaxCount &&
-        autoRecoveryEnabled) {
-        
+        brain->data->recoveryState == RobotRecoveryState::HAS_FALLEN &&
+        // brain->data->isRecoveryAvailable && 
+        brain->data->currentRobotModeIndex == 3 && 
+        brain->data->recoveryPerformedRetryCount < brain->get_parameter("recovery.retry_max_count").get_value<int>()) {
         brain->client->standUp();
         brain->data->recoveryPerformed = true;
         brain->speak("Trying to stand up");
-        log(format("Triggered stand up (attempt %d/%d)", 
-            brain->data->recoveryPerformedRetryCount + 1, retryMaxCount), true);
-        
+        brain->log->log("recovery", rerun::TextLog(format("Recovery retry count: %d", brain->data->recoveryPerformedRetryCount)));
         return NodeStatus::SUCCESS;
     }
 
-    // === 情况 3: 监听站立过程启动并累计重试次数 ===
-    // 机器人进入站立模式 (模式 12: IS_GETTING_UP)
-    if (brain->data->recoveryPerformed && curMode == 12) {
-        brain->data->recoveryPerformedRetryCount += 1;
+    if (brain->data->recoveryPerformed && brain->data->currentRobotModeIndex == 12) {
+        brain->data->recoveryPerformedRetryCount +=1;
         brain->data->recoveryPerformed = false;
-        // 修正日志：此时只是动作开始/被确认，并非完成
-        log(format("Stand up action initiated. Retry count: %d/%d", 
-            brain->data->recoveryPerformedRetryCount, retryMaxCount), true);
-        
-        return NodeStatus::SUCCESS;
+        brain->log->log("recovery", rerun::TextLog(format("Add retry count: %d", brain->data->recoveryPerformedRetryCount)));
     }
 
-    // === 情况 4: 恢复成功 ===
-    // 当机器人成功站立并回到就绪状态时
-    if (curState == RobotRecoveryState::IS_READY && curMode == 8) {
-        // 只有在非初始状态（曾经尝试过恢复）才重置，避免开机刷屏
-        if (brain->data->recoveryPerformedRetryCount > 0) {
-            brain->data->recoveryPerformedRetryCount = 0;
-            brain->data->recoveryPerformed = false;
-            log("Recovery completed successfully. Ready to play.", true);
-            brain->speak("Ready");
-        }
-        return NodeStatus::SUCCESS;
-    }
 
-    // === 情况 5: 恢复失败（重试超限） ===
-    // 如果重试次数已达到最大值但仍未恢复
-    if (brain->data->recoveryPerformedRetryCount >= retryMaxCount &&
-        curState != RobotRecoveryState::IS_READY) {
-        
-        // 避免重复打印警告
-        static rclcpp::Time lastWarnTime(0, 0, RCL_ROS_TIME);
-        auto now = brain->get_clock()->now();
-        if ((now - lastWarnTime).seconds() > 5.0) {
-            log(format("WARNING: Recovery failed after %d attempts. Degrading to manual mode.", retryMaxCount), true);
-            brain->speak("Recovery failed");
-            lastWarnTime = now;
-        }
-        
-        brain->tree->setEntry<bool>("recovery_failed", true);
-        return NodeStatus::SUCCESS;
-    } else {
-        // 如果不再失败状态（例如手动扶起来了），重置标记
-        if (brain->tree->getEntry<bool>("recovery_failed") && curState == RobotRecoveryState::IS_READY) {
-             brain->tree->setEntry<bool>("recovery_failed", false);
-        }
+    if (brain->data->recoveryState == RobotRecoveryState::IS_READY &&
+        brain->data->currentRobotModeIndex == 8) { 
+        brain->data->recoveryPerformedRetryCount = 0;
+        brain->data->recoveryPerformed = false;
+        brain->log->log("recovery", rerun::TextLog("Reset recovery, recoveryState: " + to_string(static_cast<int>(brain->data->recoveryState))));
     }
 
     return NodeStatus::SUCCESS;

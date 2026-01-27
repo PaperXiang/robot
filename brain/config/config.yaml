@@ -28,8 +28,6 @@ brain_node:
       cooperation: 
         enable_role_switch: false 
         ball_control_cost_threshold: 20.0 
-      enable_auto_standup: true       # 是否启用自动站立
-      enable_recovery_downgrade: true # 重试失败时是否切换手动模式
 
     obstacle_avoidance:
       depth_sample_step: 16 
@@ -70,9 +68,7 @@ brain_node:
       img_interval: 1 
     
     recovery:
-      retry_max_count: 3              # 最大重试次数
-      standup_timeout: 5000           # 单次站立超时时间 (ms)
-      reposition_timeout: 10000       # 重新定位超时时间 (ms)
+      retry_max_count: 2
 
     vision:
         image_topic: "/camera/camera/color/image_raw" 
@@ -88,3 +84,52 @@ brain_node:
     sound:
       enable: false 
       sound_pack: "espeak" 
+
+    # ========== 新增: 感知系统优化配置 ==========
+    # 基于论文《学习人形机器人的视觉驱动反应式足球技能》
+    perception:
+      # 虚拟感知系统参数 (论文3.4节)
+      noise_std: 0.05                    # 位置噪声标准差(米)
+      latency_ms: 50.0                   # 模拟延迟(毫秒)
+      detection_rate_near: 0.95          # 近距离检测率
+      detection_rate_far: 0.70           # 远距离检测率
+      distance_threshold: 5.0            # 近/远距离阈值(米)
+      
+      # 多帧融合参数
+      fusion_window: 5                   # 融合窗口大小
+      kalman_process_noise: 0.01         # 卡尔曼过程噪声
+      kalman_measurement_noise: 0.1      # 卡尔曼测量噪声
+      
+      # 滤波开关
+      enable_noise_modeling: true        # 启用噪声建模
+      enable_latency_simulation: false   # 延迟模拟(真实系统已有延迟,通常关闭)
+      enable_detection_rate: true        # 启用检测率建模
+      enable_fusion: true                # 启用多帧融合
+
+    # ========== 新增: 反应式控制配置 ==========
+    # 基于论文的感知-动作耦合思想
+    reactive_control:
+      enable: true                       # 启用反应式控制
+      ball_track_distance: 3.0           # 反应式追踪距离阈值(米)
+      reaction_time_ms: 100              # 目标反应时间(毫秒)
+      observation_history_length: 50     # 观测历史长度 (RL论文建议50帧)
+      
+      # 主动视觉搜索
+      enable_active_search: true         # 启用主动视觉搜索
+      search_switch_interval: 1.0        # 搜索位置切换间隔(秒)
+      
+    # ========== 新增: 运动控制优化配置 ==========
+    # 基于论文的对抗性运动先验(AMP)思想
+    motion:
+      # 轨迹平滑参数
+      trajectory_smoothing: true         # 启用轨迹平滑
+      smoothing_window: 3                # 平滑窗口大小
+      
+      # 踢球方向支持 (度数)
+      kick_directions: [0, 30, -30, 45, -45, 90, -90]
+      kick_selection_threshold: 15       # 方向选择阈值(度)
+      
+      # 地形自适应步态
+      terrain_type: "grass"              # grass | concrete | soil | asphalt
+      enable_terrain_adaptation: true    # 启用地形自适应
+ 
