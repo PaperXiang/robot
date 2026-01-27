@@ -916,7 +916,7 @@ NodeStatus StrikerDecide::tick() {
         && brain->data->ballDetected
         && fabs(brain->data->ball.yawToRobot) < M_PI / 2.
         && !avoidKick
-        && ball.range < 1.5
+        && ball.range < 2.0  // 优化: 从 1.5m 增加到 2.0m，允许更远距离射门
     ) {
         if (brain->data->kickType == "cross") newDecision = "cross";
         else newDecision = "kick";      
