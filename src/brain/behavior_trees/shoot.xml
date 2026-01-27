@@ -6,6 +6,8 @@
 
      <BehaviorTree ID="MainTree">
         <Sequence name="root">
+            <!-- 强制设置为主攻手，避免单机测试时进入 assist 状态 -->
+            <RunOnce><Script code="is_lead=true" /></RunOnce>
             <ReactiveSequence>
                <SubTree ID="CamFindAndTrackBall" _autoremap="true" _while="control_state>=2" />
                <Sequence _while="control_state==3" >

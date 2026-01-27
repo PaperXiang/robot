@@ -11,6 +11,18 @@
 #include <fstream>
 #include <ios>
 
+// 决策名称汉化辅助函数
+static string getDecisionCN(const string& decision) {
+    if (decision == "find") return "找球";
+    if (decision == "assist") return "辅助";
+    if (decision == "chase") return "追球";
+    if (decision == "adjust") return "调整";
+    if (decision == "kick") return "射门";
+    if (decision == "cross") return "传中";
+    if (decision == "retreat") return "后退";
+    return decision;
+}
+
 /**
  * 这里使用宏定义来缩减 RegisterBuilder 的代码量
  * REGISTER_BUILDER(Test) 展开后的效果是
@@ -918,11 +930,23 @@ NodeStatus StrikerDecide::tick() {
     }
 
     setOutput("decision_out", newDecision);
+    
+    // 汉化日志输出
+    string decisionCN = getDecisionCN(newDecision);
+    string angleGoodStr = angleGoodForKick ? "是" : "否";
+    string leadStr = brain->data->tmImLead ? "是" : "否";
+    
     brain->log->logToScreen(
         "tree/Decide",
         format(
-            "Decision: %s ballrange: %.2f ballyaw: %.2f kickDir: %.2f rbDir: %.2f angleGoodForKick: %d lead: %d", 
-            newDecision.c_str(), ballRange, ballYaw, kickDir, dir_rb_f, angleGoodForKick, brain->data->tmImLead
+            "决策: %s | 球距离: %.2fm | 球偏角: %.0f° | 射门方向: %.0f° | 机器人-球方向: %.0f° | 射门角度: %s | 主攻: %s", 
+            decisionCN.c_str(), 
+            ballRange, 
+            ballYaw * 180.0 / M_PI, 
+            kickDir * 180.0 / M_PI, 
+            dir_rb_f * 180.0 / M_PI, 
+            angleGoodStr.c_str(), 
+            leadStr.c_str()
         ),
         color
     );
@@ -976,9 +1000,24 @@ NodeStatus GoalieDecide::tick()
     }
 
     setOutput("decision_out", newDecision);
-    brain->log->logToScreen("tree/Decide",
-                            format("Decision: %s ballrange: %.2f ballyaw: %.2f kickDir: %.2f rbDir: %.2f angleIsGood: %d", newDecision.c_str(), ballRange, ballYaw, kickDir, dir_rb_f, angleIsGood),
-                            color);
+    
+    // 汉化日志输出
+    string decisionCN = getDecisionCN(newDecision);
+    string angleGoodStr = angleIsGood ? "是" : "否";
+    
+    brain->log->logToScreen(
+        "tree/Decide",
+        format(
+            "决策: %s | 球距离: %.2fm | 球偏角: %.0f° | 踢球方向: %.0f° | 机器人-球方向: %.0f° | 角度合适: %s", 
+            decisionCN.c_str(), 
+            ballRange, 
+            ballYaw * 180.0 / M_PI, 
+            kickDir * 180.0 / M_PI, 
+            dir_rb_f * 180.0 / M_PI,
+            angleGoodStr.c_str()
+        ),
+        color
+    );
     return NodeStatus::SUCCESS;
 }
 
