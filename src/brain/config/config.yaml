@@ -16,6 +16,7 @@ brain_node:
       vx_limit: 1.2 
       vy_limit: 0.4
       vtheta_limit: 1.2 
+
     strategy:
       ball_confidence_threshold: 50.0 
       ball_memory_timeout: 5.0 
@@ -26,7 +27,7 @@ brain_node:
       abort_kick_when_ball_moved: true 
       cooperation: 
         enable_role_switch: false 
-        ball_control_cost_threshold: 15.0 
+        ball_control_cost_threshold: 20.0 
 
     obstacle_avoidance:
       depth_sample_step: 16 
