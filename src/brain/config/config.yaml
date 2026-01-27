@@ -11,11 +11,11 @@ brain_node:
     robot:
       robot_height: 1.0 
       odom_factor: 1.2 
-      vx_factor: 0.65 
+      vx_factor: 1.0 
       yaw_offset: 0.0 
-      vx_limit: 1.0 
-      vy_limit: 0.4
-      vtheta_limit: 1.2 
+      vx_limit: 0.55 
+      vy_limit: 0.2
+      vtheta_limit: 0.8 
 
     strategy:
       ball_confidence_threshold: 50.0 
