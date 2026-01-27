@@ -3,17 +3,23 @@
 <root BTCPP_format="4" >
     <include path="./subtrees/subtree_cam_find_and_track_ball.xml" />
     <include path="./subtrees/subtree_striker_play.xml" />
+    <include path="./subtrees/subtree_auto_standup_and_locate.xml" />
 
      <BehaviorTree ID="MainTree">
         <Sequence name="root">
             <!-- 强制设置为主攻手，避免单机测试时进入 assist 状态 -->
             <RunOnce><Script code="is_lead=true" /></RunOnce>
-            <ReactiveSequence>
+            
+            <!-- 自动站起功能：持续检查并处理跌倒状态 -->
+            <ReactiveSequence _while="control_state==3">
+               <SubTree ID="AutoGetUpAndLocate" _autoremap="true" />
                <SubTree ID="CamFindAndTrackBall" _autoremap="true" _while="control_state>=2" />
-               <Sequence _while="control_state==3" >
-                  <!-- 直接使用前锋逻辑，包含寻球、追球、调整、射门 -->
-                  <SubTree ID="StrikerPlay" _autoremap="true" />
-               </Sequence>
+               <SubTree ID="StrikerPlay" _autoremap="true" />
+            </ReactiveSequence>
+            
+            <!-- 手动模式或其他状态 -->
+            <ReactiveSequence _while="control_state<3">
+               <SubTree ID="CamFindAndTrackBall" _autoremap="true" />
             </ReactiveSequence>
         </Sequence>
      </BehaviorTree>

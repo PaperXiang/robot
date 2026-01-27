@@ -68,7 +68,7 @@ brain_node:
       img_interval: 1 
     
     recovery:
-      retry_max_count: 2
+      retry_max_count: 3  # 测试环境下增加到 3 次，提高恢复成功率
 
     vision:
         image_topic: "/camera/camera/color/image_raw" 
