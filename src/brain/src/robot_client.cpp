@@ -77,6 +77,12 @@ int RobotClient::setVelocity(double x, double y, double theta, bool applyMinX, b
     y = cap(y, brain->config->vyLimit, -brain->config->vyLimit);
     theta = cap(theta, brain->config->vthetaLimit, -brain->config->vthetaLimit);
     
+    // 【新增】应用速度平滑器 - 提升稳定性
+    auto smoothed = velocity_smoother_.smooth(x, y, theta);
+    x = smoothed[0];
+    y = smoothed[1];
+    theta = smoothed[2];
+    
     // log simulated path based on velocity
     vector<Pose2D> path = {{0, 0, 0}}; // 坐标系是以机器人的位置为 0,0, linear 速度方向为 theta = 0 的坐标系
     double v = norm(x, y);
@@ -124,7 +130,7 @@ int RobotClient::setVelocity(double x, double y, double theta, bool applyMinX, b
     _lastCmdTime = brain->get_clock()->now();
     if (fabs(_vx) > 1e-3 || fabs(_vy) > 1e-3 || fabs(_vtheta) > 1e-3) _lastNonZeroCmdTime = brain->get_clock()->now();
     brain->log->log("RobotClient/setVelocity_out",
-        rerun::TextLog(format("vx: %.2f  vy: %.2f  vtheta: %.2f", x, y, theta)));
+        rerun::TextLog(format("vx: %.2f  vy: %.2f  vtheta: %.2f (smoothed)", x, y, theta)));
     return call(booster_interface::CreateMoveMsg(x, y, theta));
 }
 

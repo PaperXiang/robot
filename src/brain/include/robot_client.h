@@ -2,6 +2,9 @@
 
 #include <iostream>
 #include <string>
+#include <deque>
+#include <array>
+#include <cmath>
 #include <rerun.hpp>
 
 #include "booster_interface/srv/rpc_service.hpp"
@@ -118,4 +121,54 @@ private:
     double _vx, _vy, _vtheta;
     rclcpp::Time _lastCmdTime;
     rclcpp::Time _lastNonZeroCmdTime;
+
+    // 速度平滑器 - 提升行走稳定性（借鉴论文AMP思想）
+    class VelocitySmoother {
+    private:
+        std::deque<std::array<double, 3>> velocity_history_; // [vx, vy, vtheta]
+        static constexpr int HISTORY_SIZE = 8;
+        static constexpr double MAX_ACCEL = 0.8; // m/s² 最大加速度限制
+        static constexpr double DT = 0.1; // 假设100ms控制周期
+        
+    public:
+        std::array<double, 3> smooth(double vx, double vy, double vtheta) {
+            velocity_history_.push_back({vx, vy, vtheta});
+            if (velocity_history_.size() > HISTORY_SIZE) {
+                velocity_history_.pop_front();
+            }
+            
+            // 加权平均（越新的速度权重越大）
+            std::array<double, 3> smoothed = {0, 0, 0};
+            double total_weight = 0;
+            for (size_t i = 0; i < velocity_history_.size(); i++) {
+                double weight = (i + 1.0) / velocity_history_.size();
+                smoothed[0] += weight * velocity_history_[i][0];
+                smoothed[1] += weight * velocity_history_[i][1];
+                smoothed[2] += weight * velocity_history_[i][2];
+                total_weight += weight;
+            }
+            smoothed[0] /= total_weight;
+            smoothed[1] /= total_weight;
+            smoothed[2] /= total_weight;
+            
+            // 加速度限制（防止速度突变）
+            if (velocity_history_.size() >= 2) {
+                auto last = velocity_history_[velocity_history_.size() - 2];
+                for (int i = 0; i < 3; i++) {
+                    double delta = smoothed[i] - last[i];
+                    if (std::fabs(delta) > MAX_ACCEL * DT) {
+                        smoothed[i] = last[i] + std::copysign(MAX_ACCEL * DT, delta);
+                    }
+                }
+            }
+            
+            return smoothed;
+        }
+        
+        void reset() {
+            velocity_history_.clear();
+        }
+    };
+    
+    VelocitySmoother velocity_smoother_;
 };
