@@ -1,26 +1,41 @@
-<!-- 用于射门演示 -->
+<!-- 用于追球与带球测试 (无裁判机) -->
 
 <root BTCPP_format="4" >
     <include path="./subtrees/subtree_cam_find_and_track_ball.xml" />
-    <include path="./subtrees/subtree_striker_play.xml" />
+    <include path="./subtrees/subtree_find_ball.xml" />
     <include path="./subtrees/subtree_auto_standup_and_locate.xml" />
 
      <BehaviorTree ID="MainTree">
         <Sequence name="root">
-            <!-- 强制设置为主攻手，避免单机测试时进入 assist 状态 -->
-            <RunOnce><Script code="is_lead=true" /></RunOnce>
+            <!-- 强制初始化状态，绕过裁判机和队友逻辑 -->
+            <RunOnce>
+                <Script code="is_lead=true; wait_for_opponent_kickoff=false; ball_out=false" />
+            </RunOnce>
             
-            <!-- 自动站起功能：持续检查并处理跌倒状态 -->
-            <ReactiveSequence _while="control_state==3">
+            <ReactiveSequence>
+               <!-- 自动起身功能 -->
                <SubTree ID="AutoGetUpAndLocate" _autoremap="true" />
-               <SubTree ID="CamFindAndTrackBall" _autoremap="true" _while="control_state>=2" />
-               <SubTree ID="StrikerPlay" _autoremap="true" />
-            </ReactiveSequence>
-            
-            <!-- 手动模式或其他低级状态 (control_state<3) -->
-            <ReactiveSequence _while="control_state<3">
+               
+               <!-- 视觉追踪功能 -->
                <SubTree ID="CamFindAndTrackBall" _autoremap="true" />
-               <SubTree ID="StrikerPlay" _autoremap="true" />
+
+               <!-- 简化版 Striker 行为：只追球与带球调整 -->
+               <Sequence>
+                    <!-- 1. 找球 (使用 chase.xml 中的快速原地旋转找球逻辑) -->
+                    <Sequence _while="!ball_location_known">
+                       <RobotFindBall vyaw_limit="1.5" />
+                    </Sequence>
+
+                    <!-- 2. 远距离追球 (从远处快速逼近) -->
+                    <Sequence _while="ball_location_known && ball_range > 1.0">
+                       <Chase vx_limit="1.5" vy_limit="0.4" vtheta_limit="1.5" dist="0.1" safe_dist="0.5" />
+                    </Sequence>
+
+                    <!-- 3. 近距离带球/调整 (配合之前的 Adjust 优化，实现小弧线带球) -->
+                    <Sequence _while="ball_location_known && ball_range <= 1.0">
+                       <Adjust turn_threshold="0.4" range="0.6" vx_limit="1.0" vy_limit="0.6" vtheta_limit="1.5" vtheta_factor="4.0" tangential_speed_far="1.1" tangential_speed_near="0.4" />
+                    </Sequence>
+               </Sequence>
             </ReactiveSequence>
         </Sequence>
      </BehaviorTree>
