@@ -220,7 +220,7 @@ NodeStatus CamTrackBall::tick()
             return NodeStatus::SUCCESS;
         }
 
-        double smoother = 1.5;
+        double smoother = 2.5;
         double deltaYaw = deltaX / brain->config->camPixX * brain->config->camAngleX / smoother;
         double deltaPitch = deltaY / brain->config->camPixY * brain->config->camAngleY / smoother;
 
