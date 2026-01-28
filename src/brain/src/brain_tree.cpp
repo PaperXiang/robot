@@ -683,6 +683,33 @@ NodeStatus Assist::tick() {
         targetPose.y += isSecondary ? - 0.5 : 0.5;
     }
 
+    // 【3v3对抗策略】评估对抗时机
+    auto [shouldContact, contactDir, contactDist] = brain->evaluateContactOpportunity();
+    
+    if (shouldContact) {
+        // 执行对抗移动 - 用肩部撞击对手
+        log(format("Executing contact strategy: dir=%.1f, dist=%.2f", rad2deg(contactDir), contactDist));
+        
+        // 计算对抗速度 - 根据距离调整速度
+        double contactSpeed = 0.8;  // 对抗速度
+        if (contactDist < 1.5) {
+            contactSpeed = 1.2;  // 近距离时加速
+        }
+        
+        double vx = contactSpeed * cos(contactDir);
+        double vy = contactSpeed * sin(contactDir);
+        double vtheta = contactDir * 2.0;  // 转向对手
+        
+        // 限制速度
+        double vxLimit, vyLimit;
+        getInput("vx_limit", vxLimit);
+        getInput("vy_limit", vyLimit);
+        vx = cap(vx, vxLimit * 1.5, -vxLimit);  // 对抗时允许更高速度
+        vy = cap(vy, vyLimit * 1.5, -vyLimit * 1.5);
+        
+        brain->client->setVelocity(vx, vy, vtheta, false, false, false);
+        return NodeStatus::SUCCESS;
+    }
 
     double dist = norm(targetPose.x - robotPose.x, targetPose.y - robotPose.y);
     if ( 

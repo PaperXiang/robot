@@ -27,7 +27,15 @@ brain_node:
       abort_kick_when_ball_moved: true 
       cooperation: 
         enable_role_switch: false 
-        ball_control_cost_threshold: 8.0  # 3v3优化: 从20.0降低到8.0，减少谦让，提高进攻积极性
+        ball_control_cost_threshold: 12.0
+      # 3v3对抗策略配置
+      contact_strategy:
+        enable: true  # 是否启用对抗策略
+        min_dist: 1.0  # 最小对抗距离
+        max_dist: 2.5  # 最大对抗距离
+        ball_nearby_dist: 1.5  # 对手"持球"判定距离
+        contact_speed: 0.8  # 对抗速度
+        score_threshold: 0.5  # 对抗评分阈值
 
     obstacle_avoidance:
       depth_sample_step: 16 
