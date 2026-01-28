@@ -220,7 +220,7 @@ NodeStatus CamTrackBall::tick()
             return NodeStatus::SUCCESS;
         }
 
-        double smoother = 1.5;
+        double smoother = 2.5;  // 优化: 从 1.5 增加到 2.5，使追踪更柔和
         double deltaYaw = deltaX / brain->config->camPixX * brain->config->camAngleX / smoother;
         double deltaPitch = deltaY / brain->config->camPixY * brain->config->camAngleY / smoother;
 

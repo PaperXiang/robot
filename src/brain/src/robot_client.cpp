@@ -31,11 +31,31 @@ int RobotClient::moveHead(double pitch, double yaw)
     yaw = cap(yaw, brain->config->headYawLimitLeft, brain->config->headYawLimitRight);
     pitch = max(pitch, brain->config->headPitchLimitUp);
 
-    brain->log->setTimeNow();
-    auto level = (fabs(pitch > 2.0) || fabs(yaw > 2.0)) ? rerun::TextLogLevel::Error : rerun::TextLogLevel::Info;
-    brain->log->log("debug/move_head", rerun::TextLog(format("pitch: %.1f, yaw: %.1f", pitch, yaw)).with_level(level));
+    // 【新增】平滑转头 - 使用指数平滑，让转头更柔和
+    static double lastPitch = 0.0;
+    static double lastYaw = 0.0;
+    static bool initialized = false;
+    
+    if (!initialized) {
+        lastPitch = brain->data->headPitch;
+        lastYaw = brain->data->headYaw;
+        initialized = true;
+    }
+    
+    // 平滑因子：0.3 表示每次只移动目标距离的 30%，值越小越柔和
+    const double smoothFactor = 0.3;
+    double smoothedPitch = lastPitch + (pitch - lastPitch) * smoothFactor;
+    double smoothedYaw = lastYaw + (yaw - lastYaw) * smoothFactor;
+    
+    // 更新记录
+    lastPitch = smoothedPitch;
+    lastYaw = smoothedYaw;
 
-    return call(booster_interface::CreateRotateHeadMsg(pitch, yaw));
+    brain->log->setTimeNow();
+    auto level = (fabs(smoothedPitch > 2.0) || fabs(smoothedYaw > 2.0)) ? rerun::TextLogLevel::Error : rerun::TextLogLevel::Info;
+    brain->log->log("debug/move_head", rerun::TextLog(format("pitch: %.2f->%.2f, yaw: %.2f->%.2f (smooth)", pitch, smoothedPitch, yaw, smoothedYaw)).with_level(level));
+
+    return call(booster_interface::CreateRotateHeadMsg(smoothedPitch, smoothedYaw));
 }
 
 int RobotClient::standUp()
