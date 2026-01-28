@@ -393,19 +393,14 @@ NodeStatus Chase::tick()
         vtheta = targetDir * 2.5;
         if (fabs(targetDir) < 0.1 && ballRange > 2.0) vtheta = 0.0;
         
-        // 【稳定性优化】激进的转身减速策略
-        // 当需要快速转身时(vtheta大)，大幅降低前进速度(vx)。
-        // 这让机器人倾向于"先原地转身，对准后再跑"，比"边跑边大回环"更稳定且不易摔倒。
-        // vtheta >= 1.0 rad/s 时，vx 降为 0。
-        double turnPenalty = max(0.0, 1.0 - fabs(vtheta)); 
+        
+        // 【转身策略优化】边走边转
+        // 允许机器人在转身时保持前进速度，形成弧线运动而非原地旋转
+        // vtheta < 0.5: 不减速 (100%)
+        // vtheta = 1.0: 减速到 75%
+        // vtheta >= 1.5: 保持 50% 速度
+        double turnPenalty = max(0.5, 1.0 - fabs(vtheta) * 0.33); 
         vx *= turnPenalty;
-
-        // 【步伐优化】保留微量前进速度（动态转身）
-        // 完全原地旋转(vx=0)可能导致步频降低。
-        // 强制保留 0.1m/s 的前进分量，诱导机器人保持较高步频，从而提升转身速度。
-        if (fabs(vtheta) > 0.5) {
-            vx = max(vx, 0.1); 
-        }
     }
 
     vx = cap(vx, vxLimit, -vxLimit);
