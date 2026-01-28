@@ -108,38 +108,15 @@ int Locator::genObservationGuidedParticles(vector<FieldMarker> markers_r, double
     hypos.setZero();
     
     // --- 步骤 1: 选择/重采样 (Selection) ---
-    // 根据 ESS 决定是否需要重采样
-    bool needResample = true;
-    if (ess > 0 && ess > essThreshold * old_hypos.rows())
-    {
-        // ESS 足够高，不需要重采样。直接复制父粒子（防止粒子贫化）
-        // 如果新粒子数 != 旧粒子数，这里需要处理一下。
-        // 为了简单，我们只在粒子数不变或成比例缩放时做简单的 Index Mapping
-        // 或者是随机抽取但不根据权重（即认为通过了的粒子权重都差不多）
-        // 但最安全的是：如果 ESS 高，我们依然做 Systemtic Resampling 或者
-        // 更简单的：直接过，不做权重轮盘赌
-        needResample = false;
-    }
+    // 注意：虽然实现了自适应重采样逻辑，但由于 locator.cpp 中的 calcProbs 函数
+    // 在计算概率时没有乘以上一时刻的权重 (即假设了每次迭代开始时权重都是均为 1/N)，
+    // 因此我们必须在每次迭代都进行重采样(Selection)，以体现粒子的优胜劣汰。
+    // 如果跳过重采样，会导致高权重粒子的优势无法传递到下一代，引起定位不稳定。
+    // 因此，这里强制使用 Systemtic Resampling (低方差重采样)，它比随机重采样更好。
     
-    // 强制重采样的情况：粒子数变化太大，或者没有提供 ESS
-    if (num != old_hypos.rows()) needResample = true;
-
-    if (!needResample)
+    // 强制执行重采样
     {
-        // 直接复制（跳过 Selection），保留多样性
-        // 注意：这里假设 num <= old_hypos.rows()，我们直接取前 num 个
-        // 或者随机取 num 个但不看权重
-        for (int i = 0; i < randomCount; i++)
-        {
-            // 简单地循环复制，或者随机取索引
-            int idx = i % old_hypos.rows(); 
-            hypos.row(i).head(3) = old_hypos.row(idx).head(3);
-        }
-    }
-    else
-    {
-        // 需要重采样：使用低方差采样 (Systematic Resampling)
-        // 这比原来的随机轮盘赌 (Random Sampling) 更好，方差更小
+        // 使用低方差采样 (Systematic Resampling)
         double r = ((double)rand() / RAND_MAX) / randomCount; // 注意分母是 randomCount
         double c = old_hypos(0, 5);
         int i = 0;
