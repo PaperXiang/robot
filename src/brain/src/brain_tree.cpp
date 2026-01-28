@@ -164,8 +164,8 @@ NodeStatus StepOnSpot::tick()
 NodeStatus CamTrackBall::tick()
 {
     double pitch, yaw, ballX, ballY, deltaX, deltaY;
-    const double pixToleranceX = brain->config->camPixX / 4.; 
-    const double pixToleranceY = brain->config->camPixY / 4.;
+    const double pixToleranceX = brain->config->camPixX / 10.; 
+    const double pixToleranceY = brain->config->camPixY / 10.;
     const double xCenter = brain->config->camPixX / 2;
     const double yCenter = brain->config->camPixY / 2; 
 
