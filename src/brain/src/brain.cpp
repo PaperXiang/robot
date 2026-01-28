@@ -509,6 +509,7 @@ void Brain::handleCooperation() {
         data->tmImAlive 
         && tree->getEntry<string>("player_role") == "goal_keeper"
         && data->tmImLead 
+        && data->ball.posToField.x < 0  // 新增: 仅当球在己方半场时才考虑切换
         && msecsSince(data->tmLastCmdChangeTime) > CMD_COOLDOWN 
     ) {
         auto distToGoal = [=](Pose2D pose) {
@@ -2819,6 +2820,115 @@ double Brain::calcAvoidDir(double startAngle, double safeDist) {
     }
     return toPInPI(determinedAngle);
 }
+
+/**
+ * @brief 评估对抗时机和方向 - 3v3对抗策略
+ * 
+ * 策略原则：
+ * 1. 只在安全距离内对抗（1.0-2.0m）
+ * 2. 优先从侧面接近（45-135度），避免正面碰撞
+ * 3. 只对抗持球对手或靠近球的对手
+ * 4. 确保己方进攻不受影响
+ * 5. 不在己方禁区附近对抗（避免失误送分）
+ * 
+ * @return tuple<bool, double, double> {是否应该对抗, 对抗方向(弧度), 对抗距离}
+ */
+std::tuple<bool, double, double> Brain::evaluateContactOpportunity() {
+    // 常量配置
+    const double CONTACT_MIN_DIST = 1.0;   // 最小对抗距离
+    const double CONTACT_MAX_DIST = 2.5;   // 最大对抗距离
+    const double BALL_NEARBY_DIST = 1.5;   // 对手"持球"判定距离
+    const double SAFE_ZONE_X = -config->fieldDimensions.length / 2.0 + config->fieldDimensions.penaltyAreaLength + 0.5;
+    
+    auto robots = data->getRobots();  // 获取检测到的对手机器人
+    auto ballPos = data->ball.posToField;
+    auto robotPose = data->robotPoseToField;
+    
+    // 不在己方禁区附近对抗
+    if (robotPose.x < SAFE_ZONE_X) {
+        return {false, 0, 0};
+    }
+    
+    // 如果自己是主攻手，不执行对抗（专注进攻）
+    if (data->tmImLead) {
+        return {false, 0, 0};
+    }
+    
+    // 寻找最佳对抗目标
+    double bestContactAngle = 0;
+    double bestContactDist = 0;
+    bool foundContact = false;
+    double bestScore = -1;
+    
+    for (const auto& robot : robots) {
+        double distToRobot = norm(robot.posToRobot.x, robot.posToRobot.y);
+        double angleToRobot = atan2(robot.posToRobot.y, robot.posToRobot.x);
+        
+        // 检查距离是否在对抗范围内
+        if (distToRobot < CONTACT_MIN_DIST || distToRobot > CONTACT_MAX_DIST) {
+            continue;
+        }
+        
+        // 检查对手是否靠近球（持球或抢球中）
+        double robotDistToBall = norm(robot.posToField.x - ballPos.x, robot.posToField.y - ballPos.y);
+        if (robotDistToBall > BALL_NEARBY_DIST) {
+            continue;  // 对手远离球，不对抗
+        }
+        
+        // 计算接近角度评分 - 侧面接近更安全
+        // 角度在45-135度或-45到-135度之间得分更高
+        double absAngle = fabs(angleToRobot);
+        double angleScore = 0;
+        if (absAngle > M_PI / 4 && absAngle < 3 * M_PI / 4) {
+            angleScore = 1.0;  // 侧面接近，最佳
+        } else if (absAngle < M_PI / 6 || absAngle > 5 * M_PI / 6) {
+            angleScore = 0.3;  // 正面/背面接近，风险较高
+        } else {
+            angleScore = 0.6;  // 斜向接近
+        }
+        
+        // 计算对手与球的相对位置评分
+        // 对手在球和我方球门之间时，对抗价值更大
+        double ballDefenseScore = 0;
+        if (robot.posToField.x < ballPos.x && robot.posToField.x > robotPose.x) {
+            ballDefenseScore = 1.0;  // 对手在防守位置，对抗价值高
+        } else {
+            ballDefenseScore = 0.5;
+        }
+        
+        // 综合评分
+        double score = angleScore * ballDefenseScore * (1.0 - robotDistToBall / BALL_NEARBY_DIST);
+        
+        if (score > bestScore) {
+            bestScore = score;
+            bestContactAngle = angleToRobot;
+            bestContactDist = distToRobot;
+            foundContact = true;
+        }
+    }
+    
+    // 只有评分足够高时才执行对抗
+    if (foundContact && bestScore > 0.5) {
+        // 计算安全的对抗方向 - 从侧面接近
+        double contactDir = bestContactAngle;
+        
+        // 如果是正面接近，稍微偏向一侧
+        if (fabs(bestContactAngle) < M_PI / 6) {
+            contactDir = bestContactAngle > 0 ? M_PI / 4 : -M_PI / 4;
+        }
+        
+        log->setTimeNow();
+        log->log("debug/contact_strategy", rerun::TextLog(format(
+            "Contact opportunity found: angle=%.1f, dist=%.2f, score=%.2f",
+            rad2deg(bestContactAngle), bestContactDist, bestScore
+        )));
+        
+        return {true, contactDir, bestContactDist};
+    }
+    
+    return {false, 0, 0};
+}
+
 
 void Brain::updateLogFile() {
     if (config->rerunLogEnableFile && msecsSince(data->timeLastLogSave) > config->rerunLogMaxFileMins * 60000)

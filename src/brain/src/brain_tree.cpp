@@ -220,7 +220,7 @@ NodeStatus CamTrackBall::tick()
             return NodeStatus::SUCCESS;
         }
 
-        double smoother = 2.5;
+        double smoother = 2.5;  // 优化: 从 1.5 增加到 2.5，使追踪更柔和
         double deltaYaw = deltaX / brain->config->camPixX * brain->config->camAngleX / smoother;
         double deltaPitch = deltaY / brain->config->camPixY * brain->config->camAngleY / smoother;
 
@@ -255,7 +255,7 @@ CamFindBall::CamFindBall(const string &name, const NodeConfig &config, Brain *_b
     _cmdSequence[5][1] = leftYaw;
 
     _cmdIndex = 0;
-    _cmdIntervalMSec = 800;
+    _cmdIntervalMSec = 1200;  // 优化: 从800ms增加到1200ms，使转头更柔和
     _cmdRestartIntervalMSec = 50000;
     _timeLastCmd = brain->get_clock()->now();
 }
@@ -588,16 +588,28 @@ NodeStatus GoToGoalBlockingPosition::tick() {
 
     string curRole = brain->tree->getEntry<string>("player_role");
 
+    // 动态调整距离球门线的距离 - 根据球的位置
+    double dynamicDist = distToGoalline;
+    if (curRole == "goal_keeper") {
+        if (ballPos.x < -fd.length / 2.0 + fd.penaltyAreaLength) {
+            // 球在禁区内，靠近球门线
+            dynamicDist = min(distToGoalline, 0.8);
+        } else if (ballPos.x < 0) {
+            // 球在己方半场，适度前移
+            dynamicDist = max(distToGoalline, 1.2);
+        }
+    }
+
     Pose2D targetPose;
-    targetPose.x = curRole == "striker" ? (std::max(- fd.length / 2.0 + distToGoalline, ballPos.x - 1.5))
-            : (- fd.length / 2.0 + distToGoalline);
-    if (ballPos.x + fd.length / 2.0 < distToGoalline) {
+    targetPose.x = curRole == "striker" ? (std::max(- fd.length / 2.0 + dynamicDist, ballPos.x - 1.5))
+            : (- fd.length / 2.0 + dynamicDist);
+    if (ballPos.x + fd.length / 2.0 < dynamicDist) {
         targetPose.y = curRole == "striker" ? (ballPos.y > 0 ? fd.goalWidth / 2.0 : -fd.goalWidth / 2.0)
             : (ballPos.y > 0 ? fd.goalWidth / 4.0 : -fd.goalWidth / 4.0);
     } else {
-        targetPose.y = ballPos.y * distToGoalline / (ballPos.x + fd.length / 2.0);
+        targetPose.y = ballPos.y * dynamicDist / (ballPos.x + fd.length / 2.0);
         targetPose.y = curRole == "striker" ? (cap(targetPose.y, fd.goalWidth / 2.0, -fd.goalWidth / 2.0))
-            : (cap(targetPose.y, fd.penaltyAreaWidth/ 2.0, -fd.penaltyAreaWidth / 2.0));
+            : (cap(targetPose.y, fd.goalWidth * 0.6, -fd.goalWidth * 0.6));  // 扩大守门员侧移范围
     }
 
     double dist = norm(targetPose.x - robotPose.x, targetPose.y - robotPose.y);
@@ -671,6 +683,33 @@ NodeStatus Assist::tick() {
         targetPose.y += isSecondary ? - 0.5 : 0.5;
     }
 
+    // 【3v3对抗策略】评估对抗时机
+    auto [shouldContact, contactDir, contactDist] = brain->evaluateContactOpportunity();
+    
+    if (shouldContact) {
+        // 执行对抗移动 - 用肩部撞击对手
+        log(format("Executing contact strategy: dir=%.1f, dist=%.2f", rad2deg(contactDir), contactDist));
+        
+        // 计算对抗速度 - 根据距离调整速度
+        double contactSpeed = 0.8;  // 对抗速度
+        if (contactDist < 1.5) {
+            contactSpeed = 1.2;  // 近距离时加速
+        }
+        
+        double vx = contactSpeed * cos(contactDir);
+        double vy = contactSpeed * sin(contactDir);
+        double vtheta = contactDir * 2.0;  // 转向对手
+        
+        // 限制速度
+        double vxLimit, vyLimit;
+        getInput("vx_limit", vxLimit);
+        getInput("vy_limit", vyLimit);
+        vx = cap(vx, vxLimit * 1.5, -vxLimit);  // 对抗时允许更高速度
+        vy = cap(vy, vyLimit * 1.5, -vyLimit * 1.5);
+        
+        brain->client->setVelocity(vx, vy, vtheta, false, false, false);
+        return NodeStatus::SUCCESS;
+    }
 
     double dist = norm(targetPose.x - robotPose.x, targetPose.y - robotPose.y);
     if ( 
@@ -808,6 +847,61 @@ NodeStatus CalcKickDir::tick()
     auto fd = brain->config->fieldDimensions;
     auto color = 0xFFFFFFFF; // for log
 
+    // 【新增】获取对手位置并检测射门线路是否被阻挡
+    auto obstacles = brain->data->getObstacles();
+    auto robots = brain->data->getRobots();  // 获取检测到的对手机器人
+    
+    // 计算射门方向的最佳角度（考虑对手阻挡）
+    auto findBestShootAngle = [&](double angleLeft, double angleRight) -> double {
+        const int numSamples = 9;  // 在球门范围内采样9个角度
+        double angleStep = (angleLeft - angleRight) / (numSamples - 1);
+        double bestAngle = (angleLeft + angleRight) / 2.0;  // 默认瞄准球门中心
+        double maxClearance = 0;
+        
+        for (int i = 0; i < numSamples; i++) {
+            double testAngle = angleRight + angleStep * i;
+            double minObstacleDist = 10.0;  // 假设无障碍物时距离为10m
+            
+            // 检查这个方向上是否有障碍物
+            for (const auto& obs : obstacles) {
+                // 计算障碍物相对于球的方向
+                double obsAngle = atan2(obs.posToField.y - bPos.y, obs.posToField.x - bPos.x);
+                double angleDiff = fabs(toPInPI(testAngle - obsAngle));
+                
+                // 如果障碍物在射门线路上（角度差<15度）
+                if (angleDiff < M_PI / 12) {
+                    double obsDist = norm(obs.posToField.x - bPos.x, obs.posToField.y - bPos.y);
+                    // 障碍物在球门前方才考虑
+                    if (obsDist < minObstacleDist && obsDist > 0.5) {
+                        minObstacleDist = obsDist;
+                    }
+                }
+            }
+            
+            // 检查对手机器人
+            for (const auto& robot : robots) {
+                double robotAngle = atan2(robot.posToField.y - bPos.y, robot.posToField.x - bPos.x);
+                double angleDiff = fabs(toPInPI(testAngle - robotAngle));
+                
+                // 如果对手在射门线路上（角度差<20度）
+                if (angleDiff < M_PI / 9) {
+                    double robotDist = norm(robot.posToField.x - bPos.x, robot.posToField.y - bPos.y);
+                    if (robotDist < minObstacleDist && robotDist > 0.3) {
+                        minObstacleDist = robotDist;
+                    }
+                }
+            }
+            
+            // 选择最空旷的方向
+            if (minObstacleDist > maxClearance) {
+                maxClearance = minObstacleDist;
+                bestAngle = testAngle;
+            }
+        }
+        
+        return bestAngle;
+    };
+
     if (thetal - thetar < crossThreshold && brain->data->ball.posToField.x > fd.circleRadius) {
         brain->data->kickType = "cross";
         color = 0xFF00FFFF;
@@ -819,18 +913,24 @@ NodeStatus CalcKickDir::tick()
     else if (brain->isDefensing()) {
         brain->data->kickType = "block";
         color = 0xFFFF00FF;
-        brain->data->kickDir = atan2(
-            bPos.y,
-            bPos.x + fd.length/2
-        );
-
+        // 防守时踢向对方半场边线，避开对手
+        double safeDir = bPos.y > 0 ? M_PI / 6 : -M_PI / 6;  // 斜踢向两侧
+        brain->data->kickDir = safeDir;
     } else { 
         brain->data->kickType = "shoot";
         color = 0x00FF00FF;
-        brain->data->kickDir = atan2(
-            - bPos.y,
-            fd.length/2 - bPos.x
-        );
+        
+        // 【优化】使用智能射门方向计算，考虑对手阻挡
+        if (bPos.x > fd.length / 4) {  // 在对方半场
+            brain->data->kickDir = findBestShootAngle(thetal, thetar);
+        } else {
+            // 在己方半场，直接瞄准球门中心
+            brain->data->kickDir = atan2(
+                - bPos.y,
+                fd.length/2 - bPos.x
+            );
+        }
+        
         if (brain->data->ball.posToField.x > brain->config->fieldDimensions.length / 2) brain->data->kickDir = 0; 
     }
 
@@ -887,7 +987,7 @@ NodeStatus StrikerDecide::tick() {
     auto dt = brain->msecsSince(timeLastTick);
     bool reachedKickDir = 
         deltaDir * lastDeltaDir <= 0 
-        && fabs(deltaDir) < M_PI / 6
+        && fabs(deltaDir) < M_PI / 4.5  // 放宽角度要求: 30度 → 40度
         && dt < 100;
     reachedKickDir = reachedKickDir || fabs(deltaDir) < 0.1;
     timeLastTick = now;
@@ -916,12 +1016,25 @@ NodeStatus StrikerDecide::tick() {
         && brain->data->ballDetected
         && fabs(brain->data->ball.yawToRobot) < M_PI / 2.
         && !avoidKick
-        && ball.range < 2.0  // 优化: 从 1.5m 增加到 2.0m，允许更远距离射门
+        && ball.range < 2.5  // 优化: 从 2.0m 增加到 2.5m，允许更远距离射门
     ) {
         if (brain->data->kickType == "cross") newDecision = "cross";
         else newDecision = "kick";      
         color = 0x00FF00FF;
         brain->data->isFreekickKickingOff = false; 
+    }
+    // 【3v3优化】快速射门模式 - 减少射门延迟
+    else if (
+        ballRange < 1.2  // 近距离
+        && fabs(deltaDir) < M_PI / 3.6  // 角度基本合适(50度内)
+        && ball.posToField.x > brain->config->fieldDimensions.length / 4  // 在对方半场
+        && brain->data->ballDetected
+        && !avoidKick
+        && brain->data->kickType == "shoot"  // 只有射门模式才启用快速射门
+    ) {
+        newDecision = "kick";
+        color = 0xFF8800FF;  // 橙色标记快速射门
+        log("quick shot triggered!");
     }
     else
     {
@@ -979,11 +1092,11 @@ NodeStatus GoalieDecide::tick()
         newDecision = "find";
         color = 0x0000FFFF;
     }
-    else if (brain->data->ball.posToField.x > 0 - static_cast<double>(lastDecision == "retreat"))
+    else if (brain->data->ball.posToField.x > -1.0 - static_cast<double>(lastDecision == "retreat") * 0.5)
     {
         newDecision = "retreat";
         color = 0xFF00FFFF;
-    } else if (ballRange > chaseRangeThreshold * (lastDecision == "chase" ? 0.9 : 1.0))
+    } else if (ballRange > chaseRangeThreshold * (lastDecision == "chase" ? 0.85 : 1.0))
     {
         newDecision = "chase";
         color = 0x00FF00FF;

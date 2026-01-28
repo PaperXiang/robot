@@ -176,6 +176,13 @@ public:
 
     double calcAvoidDir(double startAngle, double safeDist);
 
+    /**
+     * @brief 评估对抗时机和方向 - 3v3对抗策略
+     * 
+     * @return tuple<bool, double, double> {是否应该对抗, 对抗方向(弧度), 对抗距离}
+     *         返回false表示当前不适合对抗
+     */
+    std::tuple<bool, double, double> evaluateContactOpportunity();
 
 private:
     void loadConfig();
