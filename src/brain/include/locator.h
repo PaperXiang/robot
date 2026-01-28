@@ -93,7 +93,7 @@ public:
 	int getDynamicParticleCount();
 	
 	// 优化3: 观测引导的粒子生成
-	int genObservationGuidedParticles(vector<FieldMarker> markers_r);
+	int genObservationGuidedParticles(vector<FieldMarker> markers_r, double ess = -1.0);
 
 	
 	inline double probDesity(double r, double mu, double sigma)
