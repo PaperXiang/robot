@@ -196,16 +196,10 @@ NodeStatus CamTrackBall::tick()
 
     if (!iSeeBall)
     { 
-        if (iKnowBallPos) {
-            pitch = brain->data->ball.pitchToRobot;
-            yaw = brain->data->ball.yawToRobot;
-        } else if (tmBallPosReliable) {
-            pitch = brain->data->tmBall.pitchToRobot;
-            yaw = brain->data->tmBall.yawToRobot;
-        } else {
-            log("reached impossible condition");
-        }
-        logTrackingBox(0x000000FF, "ball not detected"); 
+        // 看不到球时，不要卡在固定角度，而是返回 FAILURE
+        // 让 BehaviorTree 切换到 CamFindBall 进行主动扫描
+        logTrackingBox(0x000000FF, "ball not detected - switching to scan mode"); 
+        return NodeStatus::FAILURE;
     }
     else {      
         ballX = mean(brain->data->ball.boundingBox.xmax, brain->data->ball.boundingBox.xmin);
@@ -1501,7 +1495,7 @@ NodeStatus TurnOnSpot::onStart()
     if (towardsBall) {
         double dir = 1.0;
         // 优先使用队友信息指引方向 (如果可靠)
-        if (brain->data->tmBall.reliability > 0.5) {
+        if (brain->data->tmBall.confidence > 0.5) {
             dir = (brain->data->tmBall.yawToRobot > 0) ? 1.0 : -1.0;
         } 
         // 其次使用残留的视觉信息 (如果非全0)
