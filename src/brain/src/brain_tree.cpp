@@ -222,7 +222,7 @@ NodeStatus CamTrackBall::tick()
 
         // 自适应追踪平滑系数
         // 误差越大，平滑系数越小（响应越快），以应对球的快速移动
-        double smoother = 2.5; 
+        double smoother = 2.0; 
         double absDeltaX = std::fabs(deltaX);
         double rangeX = brain->config->camPixX;
         
