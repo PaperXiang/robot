@@ -117,6 +117,9 @@ public:
 
     bool isStandingStill(double timeBuffer = 1000);
 
+    double getLastCmdHeadPitch() { return _lastHeadPitch; }
+    double getLastCmdHeadYaw() { return _lastHeadYaw; }
+
 private:
     int call(booster_interface::msg::BoosterApiReqMsg msg);
     rclcpp::Publisher<booster_msgs::msg::RpcReqMsg>::SharedPtr publisher;
@@ -127,8 +130,6 @@ private:
     double _lastHeadPitch = 0.0;
     double _lastHeadYaw = 0.0;
 
-    double getLastCmdHeadPitch() { return _lastHeadPitch; }
-    double getLastCmdHeadYaw() { return _lastHeadYaw; }
 
     // 速度平滑器 - 提升行走稳定性（借鉴论文AMP思想，优化参数版本）
     class VelocitySmoother {
