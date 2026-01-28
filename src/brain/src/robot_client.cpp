@@ -32,23 +32,24 @@ int RobotClient::moveHead(double pitch, double yaw)
     pitch = max(pitch, brain->config->headPitchLimitUp);
 
     // 【新增】平滑转头 - 使用指数平滑，让转头更柔和
-    static double lastPitch = 0.0;
-    static double lastYaw = 0.0;
+    // 【新增】平滑转头 - 使用指数平滑，让转头更柔和
     static bool initialized = false;
     
     if (!initialized) {
-        lastPitch = brain->data->headPitch;
-        lastYaw = brain->data->headYaw;
+        _lastHeadPitch = brain->data->headPitch;
+        _lastHeadYaw = brain->data->headYaw;
         initialized = true;
     }
     
     // 平滑因子策略 (根据球是否可见区分模式)：
+    // 融合了队友的成员变量修改(_lastHeadPitch)和我们的双模式策略
     bool seeingBall = brain->data->ballDetected;
-    double diff = max(fabs(pitch - lastPitch), fabs(yaw - lastYaw));
+    double diff = max(fabs(pitch - _lastHeadPitch), fabs(yaw - _lastHeadYaw));
     double smoothFactor = 0.5;
 
     if (seeingBall) {
         // 【追球模式】: 响应优先，必须跟上球的运动
+        // 队友的旧代码在这里限制了 >20度 的速度(0.15)，我们必须用我们的 0.8 覆盖它
         if (diff > deg2rad(20)) {
             smoothFactor = 0.8; // 极速响应：大角度修正
         } else if (diff > deg2rad(3)) {
@@ -57,8 +58,7 @@ int RobotClient::moveHead(double pitch, double yaw)
             smoothFactor = 0.3; // 微小移动防抖
         }
     } else {
-        // 【找球模式】: 平滑优先，保护电机，防止画面模糊
-        // 扫描动作因为跨度大，如果不用低系数平滑，会非常猛烈
+        // 【找球模式】: 平滑优先，保护电机
         if (diff > deg2rad(10)) {
             smoothFactor = 0.15; // 慢速柔和的大范围扫描
         } else {
@@ -66,12 +66,12 @@ int RobotClient::moveHead(double pitch, double yaw)
         }
     }
 
-    double smoothedPitch = lastPitch + (pitch - lastPitch) * smoothFactor;
-    double smoothedYaw = lastYaw + (yaw - lastYaw) * smoothFactor;
+    double smoothedPitch = _lastHeadPitch + (pitch - _lastHeadPitch) * smoothFactor;
+    double smoothedYaw = _lastHeadYaw + (yaw - _lastHeadYaw) * smoothFactor;
     
     // 更新记录
-    lastPitch = smoothedPitch;
-    lastYaw = smoothedYaw;
+    _lastHeadPitch = smoothedPitch;
+    _lastHeadYaw = smoothedYaw;
 
     brain->log->setTimeNow();
     auto level = (fabs(smoothedPitch > 2.0) || fabs(smoothedYaw > 2.0)) ? rerun::TextLogLevel::Error : rerun::TextLogLevel::Info;

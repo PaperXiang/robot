@@ -124,6 +124,11 @@ private:
     double _vx, _vy, _vtheta;
     rclcpp::Time _lastCmdTime;
     rclcpp::Time _lastNonZeroCmdTime;
+    double _lastHeadPitch = 0.0;
+    double _lastHeadYaw = 0.0;
+
+    double getLastCmdHeadPitch() { return _lastHeadPitch; }
+    double getLastCmdHeadYaw() { return _lastHeadYaw; }
 
     // 速度平滑器 - 提升行走稳定性（借鉴论文AMP思想，优化参数版本）
     class VelocitySmoother {

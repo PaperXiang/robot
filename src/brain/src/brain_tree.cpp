@@ -234,8 +234,8 @@ NodeStatus CamTrackBall::tick()
         double deltaYaw = deltaX / brain->config->camPixX * brain->config->camAngleX / smoother;
         double deltaPitch = deltaY / brain->config->camPixY * brain->config->camAngleY / smoother;
 
-        pitch = brain->data->headPitch + deltaPitch;
-        yaw = brain->data->headYaw - deltaYaw;
+        pitch = brain->client->getLastCmdHeadPitch() + deltaPitch;
+        yaw = brain->client->getLastCmdHeadYaw() - deltaYaw;
         auto label = format("ballX: %.1f, ballY: %.1f, deltaX: %.1f, deltaY: %.1f, pitch: %.1f, yaw: %.1f", ballX, ballY, deltaX, deltaY, pitch, yaw);
         logTrackingBox(0xFF0000FF, label);
     }
