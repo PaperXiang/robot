@@ -509,6 +509,7 @@ void Brain::handleCooperation() {
         data->tmImAlive 
         && tree->getEntry<string>("player_role") == "goal_keeper"
         && data->tmImLead 
+        && data->ball.posToField.x < 0  // 新增: 仅当球在己方半场时才考虑切换
         && msecsSince(data->tmLastCmdChangeTime) > CMD_COOLDOWN 
     ) {
         auto distToGoal = [=](Pose2D pose) {

@@ -588,16 +588,28 @@ NodeStatus GoToGoalBlockingPosition::tick() {
 
     string curRole = brain->tree->getEntry<string>("player_role");
 
+    // 动态调整距离球门线的距离 - 根据球的位置
+    double dynamicDist = distToGoalline;
+    if (curRole == "goal_keeper") {
+        if (ballPos.x < -fd.length / 2.0 + fd.penaltyAreaLength) {
+            // 球在禁区内，靠近球门线
+            dynamicDist = min(distToGoalline, 0.8);
+        } else if (ballPos.x < 0) {
+            // 球在己方半场，适度前移
+            dynamicDist = max(distToGoalline, 1.2);
+        }
+    }
+
     Pose2D targetPose;
-    targetPose.x = curRole == "striker" ? (std::max(- fd.length / 2.0 + distToGoalline, ballPos.x - 1.5))
-            : (- fd.length / 2.0 + distToGoalline);
-    if (ballPos.x + fd.length / 2.0 < distToGoalline) {
+    targetPose.x = curRole == "striker" ? (std::max(- fd.length / 2.0 + dynamicDist, ballPos.x - 1.5))
+            : (- fd.length / 2.0 + dynamicDist);
+    if (ballPos.x + fd.length / 2.0 < dynamicDist) {
         targetPose.y = curRole == "striker" ? (ballPos.y > 0 ? fd.goalWidth / 2.0 : -fd.goalWidth / 2.0)
             : (ballPos.y > 0 ? fd.goalWidth / 4.0 : -fd.goalWidth / 4.0);
     } else {
-        targetPose.y = ballPos.y * distToGoalline / (ballPos.x + fd.length / 2.0);
+        targetPose.y = ballPos.y * dynamicDist / (ballPos.x + fd.length / 2.0);
         targetPose.y = curRole == "striker" ? (cap(targetPose.y, fd.goalWidth / 2.0, -fd.goalWidth / 2.0))
-            : (cap(targetPose.y, fd.penaltyAreaWidth/ 2.0, -fd.penaltyAreaWidth / 2.0));
+            : (cap(targetPose.y, fd.goalWidth * 0.6, -fd.goalWidth * 0.6));  // 扩大守门员侧移范围
     }
 
     double dist = norm(targetPose.x - robotPose.x, targetPose.y - robotPose.y);
@@ -979,11 +991,11 @@ NodeStatus GoalieDecide::tick()
         newDecision = "find";
         color = 0x0000FFFF;
     }
-    else if (brain->data->ball.posToField.x > 0 - static_cast<double>(lastDecision == "retreat"))
+    else if (brain->data->ball.posToField.x > -1.0 - static_cast<double>(lastDecision == "retreat") * 0.5)
     {
         newDecision = "retreat";
         color = 0xFF00FFFF;
-    } else if (ballRange > chaseRangeThreshold * (lastDecision == "chase" ? 0.9 : 1.0))
+    } else if (ballRange > chaseRangeThreshold * (lastDecision == "chase" ? 0.85 : 1.0))
     {
         newDecision = "chase";
         color = 0x00FF00FF;
