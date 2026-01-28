@@ -255,7 +255,7 @@ CamFindBall::CamFindBall(const string &name, const NodeConfig &config, Brain *_b
     _cmdSequence[5][1] = leftYaw;
 
     _cmdIndex = 0;
-    _cmdIntervalMSec = 800;
+    _cmdIntervalMSec = 1200;  // 优化: 从800ms增加到1200ms，使转头更柔和
     _cmdRestartIntervalMSec = 50000;
     _timeLastCmd = brain->get_clock()->now();
 }
