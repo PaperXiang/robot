@@ -277,12 +277,19 @@ NodeStatus CamFindBall::tick()
     // 利用 _timeLastCmd 作为时间基准
     double t = (brain->get_clock()->now() - _timeLastCmd).nanoseconds() / 1e9;
     
+    // 【修复冻结问题】检测是否需要重置时间基准（避免相位跳跃）
+    // 如果时间间隔过长（超过10秒），说明节点长时间未激活，重置时间基准
+    if (t > 10.0) {
+        _timeLastCmd = brain->get_clock()->now();
+        t = 0.0;
+    }
+    
     // 参数设定:
-    // Yaw: 幅度 1.1 rad (约60度), 周期 3.0s
+    // Yaw: 幅度 1.1 rad (约60度), 周期 2.0s (优化: 从 3.0s 加快到 2.0s)
     // Pitch: 中心 0.65 rad, 幅度 0.25 rad, 2倍频 (形成 8 字形)
     
-    double yaw = 1.1 * sin(2 * M_PI * t / 3.0);
-    double pitch = 0.65 + 0.25 * sin(4 * M_PI * t / 3.0);
+    double yaw = 1.1 * sin(2 * M_PI * t / 2.0);
+    double pitch = 0.65 + 0.25 * sin(4 * M_PI * t / 2.0);
     
     brain->client->moveHead(pitch, yaw);
     
