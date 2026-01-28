@@ -17,9 +17,10 @@
                <SubTree ID="StrikerPlay" _autoremap="true" />
             </ReactiveSequence>
             
-            <!-- 手动模式或其他状态 -->
+            <!-- 手动模式或其他低级状态 (control_state<3) -->
             <ReactiveSequence _while="control_state<3">
                <SubTree ID="CamFindAndTrackBall" _autoremap="true" />
+               <SubTree ID="StrikerPlay" _autoremap="true" />
             </ReactiveSequence>
         </Sequence>
      </BehaviorTree>
