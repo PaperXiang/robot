@@ -385,9 +385,17 @@ NodeStatus Chase::tick()
     } else {
         vx = min(vxLimit, brain->data->ball.range);
         vy = 0;
-        vtheta = targetDir;
+        // 增加转向增益 P-controller: vtheta = error * Kp
+        // 之前是 1.0，现在改为 2.5，大幅提升对大角度偏差的响应速度
+        vtheta = targetDir * 2.5;
         if (fabs(targetDir) < 0.1 && ballRange > 2.0) vtheta = 0.0;
-        vx *= sigmoid((fabs(vtheta)), 1, 3); 
+        
+        // 【稳定性优化】激进的转身减速策略
+        // 当需要快速转身时(vtheta大)，大幅降低前进速度(vx)。
+        // 这让机器人倾向于"先原地转身，对准后再跑"，比"边跑边大回环"更稳定且不易摔倒。
+        // vtheta >= 1.0 rad/s 时，vx 降为 0。
+        double turnPenalty = max(0.0, 1.0 - fabs(vtheta)); 
+        vx *= turnPenalty;
     }
 
     vx = cap(vx, vxLimit, -vxLimit);
@@ -397,12 +405,13 @@ NodeStatus Chase::tick()
     static double smoothVx = 0.0;
     static double smoothVy = 0.0;
     static double smoothVtheta = 0.0;
+    // 调高新值的权重 (0.3 -> 0.5) 以减少平滑带来的延迟
     smoothVx = smoothVx * 0.7 + vx * 0.3;
     smoothVy = smoothVy * 0.7 + vy * 0.3;
-    smoothVtheta = smoothVtheta * 0.7 + vtheta * 0.3;
+    smoothVtheta = smoothVtheta * 0.5 + vtheta * 0.5;
 
-    // brain->client->setVelocity(smoothVx, smoothVy, smoothVtheta, false, false, false);
-    brain->client->setVelocity(vx, vy, vtheta, false, false, false);
+    // 启用平滑后的速度指令，避免加速度过大导致不稳定
+    brain->client->setVelocity(smoothVx, smoothVy, smoothVtheta, false, false, false);
     return NodeStatus::SUCCESS;
 }
 
