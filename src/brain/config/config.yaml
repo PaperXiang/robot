@@ -27,7 +27,7 @@ brain_node:
       abort_kick_when_ball_moved: true 
       cooperation: 
         enable_role_switch: false 
-        ball_control_cost_threshold: 20.0 
+        ball_control_cost_threshold: 8.0  # 3v3优化: 从20.0降低到8.0，减少谦让，提高进攻积极性
 
     obstacle_avoidance:
       depth_sample_step: 16 

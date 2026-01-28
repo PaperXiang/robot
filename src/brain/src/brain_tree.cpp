@@ -899,7 +899,7 @@ NodeStatus StrikerDecide::tick() {
     auto dt = brain->msecsSince(timeLastTick);
     bool reachedKickDir = 
         deltaDir * lastDeltaDir <= 0 
-        && fabs(deltaDir) < M_PI / 6
+        && fabs(deltaDir) < M_PI / 4.5  // 放宽角度要求: 30度 → 40度
         && dt < 100;
     reachedKickDir = reachedKickDir || fabs(deltaDir) < 0.1;
     timeLastTick = now;
@@ -928,7 +928,7 @@ NodeStatus StrikerDecide::tick() {
         && brain->data->ballDetected
         && fabs(brain->data->ball.yawToRobot) < M_PI / 2.
         && !avoidKick
-        && ball.range < 2.0  // 优化: 从 1.5m 增加到 2.0m，允许更远距离射门
+        && ball.range < 2.5  // 优化: 从 2.0m 增加到 2.5m，允许更远距离射门
     ) {
         if (brain->data->kickType == "cross") newDecision = "cross";
         else newDecision = "kick";      
