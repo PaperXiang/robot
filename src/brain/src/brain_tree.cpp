@@ -820,6 +820,61 @@ NodeStatus CalcKickDir::tick()
     auto fd = brain->config->fieldDimensions;
     auto color = 0xFFFFFFFF; // for log
 
+    // 【新增】获取对手位置并检测射门线路是否被阻挡
+    auto obstacles = brain->data->getObstacles();
+    auto robots = brain->data->getRobots();  // 获取检测到的对手机器人
+    
+    // 计算射门方向的最佳角度（考虑对手阻挡）
+    auto findBestShootAngle = [&](double angleLeft, double angleRight) -> double {
+        const int numSamples = 9;  // 在球门范围内采样9个角度
+        double angleStep = (angleLeft - angleRight) / (numSamples - 1);
+        double bestAngle = (angleLeft + angleRight) / 2.0;  // 默认瞄准球门中心
+        double maxClearance = 0;
+        
+        for (int i = 0; i < numSamples; i++) {
+            double testAngle = angleRight + angleStep * i;
+            double minObstacleDist = 10.0;  // 假设无障碍物时距离为10m
+            
+            // 检查这个方向上是否有障碍物
+            for (const auto& obs : obstacles) {
+                // 计算障碍物相对于球的方向
+                double obsAngle = atan2(obs.posToField.y - bPos.y, obs.posToField.x - bPos.x);
+                double angleDiff = fabs(toPInPI(testAngle - obsAngle));
+                
+                // 如果障碍物在射门线路上（角度差<15度）
+                if (angleDiff < M_PI / 12) {
+                    double obsDist = norm(obs.posToField.x - bPos.x, obs.posToField.y - bPos.y);
+                    // 障碍物在球门前方才考虑
+                    if (obsDist < minObstacleDist && obsDist > 0.5) {
+                        minObstacleDist = obsDist;
+                    }
+                }
+            }
+            
+            // 检查对手机器人
+            for (const auto& robot : robots) {
+                double robotAngle = atan2(robot.posToField.y - bPos.y, robot.posToField.x - bPos.x);
+                double angleDiff = fabs(toPInPI(testAngle - robotAngle));
+                
+                // 如果对手在射门线路上（角度差<20度）
+                if (angleDiff < M_PI / 9) {
+                    double robotDist = norm(robot.posToField.x - bPos.x, robot.posToField.y - bPos.y);
+                    if (robotDist < minObstacleDist && robotDist > 0.3) {
+                        minObstacleDist = robotDist;
+                    }
+                }
+            }
+            
+            // 选择最空旷的方向
+            if (minObstacleDist > maxClearance) {
+                maxClearance = minObstacleDist;
+                bestAngle = testAngle;
+            }
+        }
+        
+        return bestAngle;
+    };
+
     if (thetal - thetar < crossThreshold && brain->data->ball.posToField.x > fd.circleRadius) {
         brain->data->kickType = "cross";
         color = 0xFF00FFFF;
@@ -831,18 +886,24 @@ NodeStatus CalcKickDir::tick()
     else if (brain->isDefensing()) {
         brain->data->kickType = "block";
         color = 0xFFFF00FF;
-        brain->data->kickDir = atan2(
-            bPos.y,
-            bPos.x + fd.length/2
-        );
-
+        // 防守时踢向对方半场边线，避开对手
+        double safeDir = bPos.y > 0 ? M_PI / 6 : -M_PI / 6;  // 斜踢向两侧
+        brain->data->kickDir = safeDir;
     } else { 
         brain->data->kickType = "shoot";
         color = 0x00FF00FF;
-        brain->data->kickDir = atan2(
-            - bPos.y,
-            fd.length/2 - bPos.x
-        );
+        
+        // 【优化】使用智能射门方向计算，考虑对手阻挡
+        if (bPos.x > fd.length / 4) {  // 在对方半场
+            brain->data->kickDir = findBestShootAngle(thetal, thetar);
+        } else {
+            // 在己方半场，直接瞄准球门中心
+            brain->data->kickDir = atan2(
+                - bPos.y,
+                fd.length/2 - bPos.x
+            );
+        }
+        
         if (brain->data->ball.posToField.x > brain->config->fieldDimensions.length / 2) brain->data->kickDir = 0; 
     }
 
@@ -934,6 +995,19 @@ NodeStatus StrikerDecide::tick() {
         else newDecision = "kick";      
         color = 0x00FF00FF;
         brain->data->isFreekickKickingOff = false; 
+    }
+    // 【3v3优化】快速射门模式 - 减少射门延迟
+    else if (
+        ballRange < 1.2  // 近距离
+        && fabs(deltaDir) < M_PI / 3.6  // 角度基本合适(50度内)
+        && ball.posToField.x > brain->config->fieldDimensions.length / 4  // 在对方半场
+        && brain->data->ballDetected
+        && !avoidKick
+        && brain->data->kickType == "shoot"  // 只有射门模式才启用快速射门
+    ) {
+        newDecision = "kick";
+        color = 0xFF8800FF;  // 橙色标记快速射门
+        log("quick shot triggered!");
     }
     else
     {
