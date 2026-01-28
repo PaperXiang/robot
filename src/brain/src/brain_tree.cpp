@@ -1462,7 +1462,6 @@ void RobotFindBall::onHalted()
 }
 
 NodeStatus CamFastScan::onStart()
-NodeStatus CamFastScan::onStart()
 {
     // 复用 _timeLastCmd 作为起始时间戳
     _timeLastCmd = brain->get_clock()->now();
