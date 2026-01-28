@@ -32,20 +32,19 @@ int RobotClient::moveHead(double pitch, double yaw)
     pitch = max(pitch, brain->config->headPitchLimitUp);
 
     // 【新增】平滑转头 - 使用指数平滑，让转头更柔和
-    static double lastPitch = 0.0;
-    static double lastYaw = 0.0;
+    // 【新增】平滑转头 - 使用指数平滑，让转头更柔和
     static bool initialized = false;
     
     if (!initialized) {
-        lastPitch = brain->data->headPitch;
-        lastYaw = brain->data->headYaw;
+        _lastHeadPitch = brain->data->headPitch;
+        _lastHeadYaw = brain->data->headYaw;
         initialized = true;
     }
     
     // 平滑因子策略：
     // 1. 如果移动幅度大 (>20度)，说明是在找球/扫视，使用小因子 (0.15) 让动作柔和
     // 2. 如果移动幅度小，说明是在追踪/锁定，使用大因子 (0.6) 保证响应速度，否则跟不上底盘旋转
-    double diff = max(fabs(pitch - lastPitch), fabs(yaw - lastYaw));
+    double diff = max(fabs(pitch - _lastHeadPitch), fabs(yaw - _lastHeadYaw));
     double smoothFactor = 0.6; // 默认快响应
     
     if (diff > deg2rad(20)) {
@@ -54,12 +53,12 @@ int RobotClient::moveHead(double pitch, double yaw)
         smoothFactor = 0.3;  // 过渡区
     }
 
-    double smoothedPitch = lastPitch + (pitch - lastPitch) * smoothFactor;
-    double smoothedYaw = lastYaw + (yaw - lastYaw) * smoothFactor;
+    double smoothedPitch = _lastHeadPitch + (pitch - _lastHeadPitch) * smoothFactor;
+    double smoothedYaw = _lastHeadYaw + (yaw - _lastHeadYaw) * smoothFactor;
     
     // 更新记录
-    lastPitch = smoothedPitch;
-    lastYaw = smoothedYaw;
+    _lastHeadPitch = smoothedPitch;
+    _lastHeadYaw = smoothedYaw;
 
     brain->log->setTimeNow();
     auto level = (fabs(smoothedPitch > 2.0) || fabs(smoothedYaw > 2.0)) ? rerun::TextLogLevel::Error : rerun::TextLogLevel::Info;
