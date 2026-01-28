@@ -1,0 +1,25 @@
+<root BTCPP_format="4" >
+     <include path="./subtrees/subtree_cam_find_and_track_ball.xml" />
+
+     <BehaviorTree ID="MainTree">
+        <ReactiveSequence name="root">
+            <!-- 始终保持头部追踪/寻找球 -->
+            <SubTree ID="CamFindAndTrackBall" _autoremap="true" />
+
+            <Sequence>
+                <!-- 第一步：如果没看到球，先原地转圈找球 -->
+                <Sequence _while="!ball_location_known">
+                    <RobotFindBall vyaw_limit="1.0" />
+                </Sequence>
+
+                <!-- 第二步：看到球后，追到球附近 (距离 < 0.4m 时停止追球进入下一步) -->
+                <Sequence _while="ball_location_known && ball_range > 0.4">
+                    <Chase vx_limit="1.2" vy_limit="0.4" vtheta_limit="1.5" dist="0.1" safe_dist="0.5" />
+                </Sequence>
+
+                <!-- 第三步：直接执行踢球动作 -->
+                <Kick speed_limit="1.5" min_msec_kick="800" msecs_stablize="200"/>
+            </Sequence>
+        </ReactiveSequence>
+     </BehaviorTree>
+</root>
