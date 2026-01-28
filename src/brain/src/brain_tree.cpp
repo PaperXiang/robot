@@ -393,7 +393,7 @@ NodeStatus Chase::tick()
         vy = speed * sin(avoidDir);
         vtheta = ballYaw;
     } else {
-        vx = min(vxLimit, brain->data->ball.range);
+        vx = max(0.2, min(vxLimit, brain->data->ball.range));
         vy = 0;
         // 增加转向增益 P-controller: vtheta = error * Kp
         // 之前是 1.0，现在改为 2.5，大幅提升对大角度偏差的响应速度
@@ -881,8 +881,9 @@ NodeStatus Adjust::tick()
         fabs(ballYaw) > TURN_FIRST_THRESHOLD 
         && fabs(deltaDir) < M_PI / 4
     ) { 
-        vx = 0;
-        vy = 0;
+        // 不再原地站立，而是保持低速弧线行进
+        vx = 0.15;
+        vy = 0.05;
     }
 
     vx = cap(vx, vxLimit, -0.);
