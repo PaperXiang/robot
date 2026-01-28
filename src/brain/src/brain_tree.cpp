@@ -234,8 +234,8 @@ NodeStatus CamTrackBall::tick()
         double deltaYaw = deltaX / brain->config->camPixX * brain->config->camAngleX / smoother;
         double deltaPitch = deltaY / brain->config->camPixY * brain->config->camAngleY / smoother;
 
-        pitch = brain->client->getLastCmdHeadPitch() + deltaPitch;
-        yaw = brain->client->getLastCmdHeadYaw() - deltaYaw;
+        pitch = brain->data->headPitch + deltaPitch;
+        yaw = brain->data->headYaw - deltaYaw;
         auto label = format("ballX: %.1f, ballY: %.1f, deltaX: %.1f, deltaY: %.1f, pitch: %.1f, yaw: %.1f", ballX, ballY, deltaX, deltaY, pitch, yaw);
         logTrackingBox(0xFF0000FF, label);
     }
@@ -277,23 +277,22 @@ NodeStatus CamFindBall::tick()
         return NodeStatus::SUCCESS;
     }
 
-    auto curTime = brain->get_clock()->now();
-    auto timeSinceLastCmd = (curTime - _timeLastCmd).nanoseconds() / 1e6;
-    if (timeSinceLastCmd < _cmdIntervalMSec)
-    {
-        return NodeStatus::SUCCESS;
-    } 
-    else if (timeSinceLastCmd > _cmdRestartIntervalMSec)
-    {                 
-        _cmdIndex = 0; 
-    }
-    else
-    { 
-        _cmdIndex = (_cmdIndex + 1) % (sizeof(_cmdSequence) / sizeof(_cmdSequence[0]));
-    }
-
-    brain->client->moveHead(_cmdSequence[_cmdIndex][0], _cmdSequence[_cmdIndex][1]);
-    _timeLastCmd = brain->get_clock()->now();
+    // 使用 Lissajous 曲线进行连续扫描 (八字扫描)
+    // 替代原来的 1.2秒一次的离散扫描，提供更平滑、快速的覆盖
+    
+    // 利用 _timeLastCmd 作为时间基准
+    double t = (brain->get_clock()->now() - _timeLastCmd).nanoseconds() / 1e9;
+    
+    // 参数设定:
+    // Yaw: 幅度 1.1 rad (约60度), 周期 3.0s
+    // Pitch: 中心 0.65 rad, 幅度 0.25 rad, 2倍频 (形成 8 字形)
+    
+    double yaw = 1.1 * sin(2 * M_PI * t / 3.0);
+    double pitch = 0.65 + 0.25 * sin(4 * M_PI * t / 3.0);
+    
+    brain->client->moveHead(pitch, yaw);
+    
+    // 每次 tick 都发送新指令并返回，保持连续运动
     return NodeStatus::SUCCESS;
 }
 
@@ -1500,8 +1499,19 @@ NodeStatus TurnOnSpot::onStart()
     _angle = getInput<double>("rad").value();
     getInput("towards_ball", towardsBall);
     if (towardsBall) {
-        double ballPixX = (brain->data->ball.boundingBox.xmin + brain->data->ball.boundingBox.xmax) / 2;
-        _angle = fabs(_angle) * (ballPixX < brain->config->camPixX / 2 ? 1 : -1);
+        double dir = 1.0;
+        // 优先使用队友信息指引方向 (如果可靠)
+        if (brain->data->tmBall.reliability > 0.5) {
+            dir = (brain->data->tmBall.yawToRobot > 0) ? 1.0 : -1.0;
+        } 
+        // 其次使用残留的视觉信息 (如果非全0)
+        else if (brain->data->ball.boundingBox.xmax > 0.1) {
+            double ballPixX = (brain->data->ball.boundingBox.xmin + brain->data->ball.boundingBox.xmax) / 2;
+            dir = (ballPixX < brain->config->camPixX / 2) ? 1.0 : -1.0;
+        }
+        // 如果都不知道，默认左转(1.0)
+        
+        _angle = fabs(_angle) * dir;
     }
 
     brain->client->setVelocity(0, 0, _angle, false, false, true);
@@ -1515,10 +1525,7 @@ NodeStatus TurnOnSpot::onRunning()
     _lastAngle = curAngle;
     _cumAngle += deltaAngle;
     double turnTime = brain->msecsSince(_timeStart);
-    // brain->log->log("debug/turn_on_spot", rerun::TextLog(format(
-    //     "angle: %.2f, cumAngle: %.2f, deltaAngle: %.2f, time: %.2f",
-    //     _angle, _cumAngle, deltaAngle, turnTime
-    // )));
+
     if (
         fabs(_cumAngle) - fabs(_angle) > -0.1
         || turnTime > _msecLimit
@@ -1528,7 +1535,8 @@ NodeStatus TurnOnSpot::onRunning()
     }
 
     // else 
-    brain->client->setVelocity(0, 0, (_angle - _cumAngle)*2);
+    // 加快转身速度 (增益 2.0 -> 3.5)
+    brain->client->setVelocity(0, 0, (_angle - _cumAngle) * 3.5);
     return NodeStatus::RUNNING;
 }
 
