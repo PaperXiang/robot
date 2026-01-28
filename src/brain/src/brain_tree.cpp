@@ -284,12 +284,13 @@ NodeStatus CamFindBall::tick()
         t = 0.0;
     }
     
-    // 参数设定:
-    // Yaw: 幅度 1.1 rad (约60度), 周期 2.0s (优化: 从 3.0s 加快到 2.0s)
-    // Pitch: 中心 0.65 rad, 幅度 0.25 rad, 2倍频 (形成 8 字形)
+    // 参数设定 (优化：更高密度且带进动的扫描模式)
+    // Yaw:   幅度 1.1 rad (约60度), 周期 2.5s (稍慢一点以提升识别率)
+    // Pitch: 中心 0.65 rad, 幅度 0.35 rad (扩大上下范围), 周期 0.8s
+    // 频率比 3.125:1 (非整数比) 形成进动轨迹，确保证每一圈路径微调，消除固定盲点
     
-    double yaw = 1.1 * sin(2 * M_PI * t / 2.0);
-    double pitch = 0.65 + 0.25 * sin(4 * M_PI * t / 2.0);
+    double yaw = 1.1 * sin(2 * M_PI * t / 2.5);
+    double pitch = 0.65 + 0.35 * sin(2 * M_PI * t / 0.8);
     
     brain->client->moveHead(pitch, yaw);
     
