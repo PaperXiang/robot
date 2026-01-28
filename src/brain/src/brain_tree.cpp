@@ -220,7 +220,17 @@ NodeStatus CamTrackBall::tick()
             return NodeStatus::SUCCESS;
         }
 
-        double smoother = 2.5;  // 优化: 从 1.5 增加到 2.5，使追踪更柔和
+        // 自适应追踪平滑系数
+        // 误差越大，平滑系数越小（响应越快），以应对球的快速移动
+        double smoother = 2.5; 
+        double absDeltaX = std::fabs(deltaX);
+        double rangeX = brain->config->camPixX;
+        
+        if (absDeltaX > rangeX / 3.0) {
+             smoother = 1.0; // 极速响应：球在视野边缘
+        } else if (absDeltaX > rangeX / 5.0) {
+             smoother = 1.5; // 快速响应：球偏离较大
+        }
         double deltaYaw = deltaX / brain->config->camPixX * brain->config->camAngleX / smoother;
         double deltaPitch = deltaY / brain->config->camPixY * brain->config->camAngleY / smoother;
 
@@ -396,6 +406,13 @@ NodeStatus Chase::tick()
         // vtheta >= 1.0 rad/s 时，vx 降为 0。
         double turnPenalty = max(0.0, 1.0 - fabs(vtheta)); 
         vx *= turnPenalty;
+
+        // 【步伐优化】保留微量前进速度（动态转身）
+        // 完全原地旋转(vx=0)可能导致步频降低。
+        // 强制保留 0.1m/s 的前进分量，诱导机器人保持较高步频，从而提升转身速度。
+        if (fabs(vtheta) > 0.5) {
+            vx = max(vx, 0.1); 
+        }
     }
 
     vx = cap(vx, vxLimit, -vxLimit);
@@ -405,10 +422,10 @@ NodeStatus Chase::tick()
     static double smoothVx = 0.0;
     static double smoothVy = 0.0;
     static double smoothVtheta = 0.0;
-    // 调高新值的权重 (0.3 -> 0.5) 以减少平滑带来的延迟
+    // 调高新值的权重 (0.3 -> 0.5 -> 0.7) 以减少平滑带来的延迟，响应更灵敏
     smoothVx = smoothVx * 0.7 + vx * 0.3;
     smoothVy = smoothVy * 0.7 + vy * 0.3;
-    smoothVtheta = smoothVtheta * 0.5 + vtheta * 0.5;
+    smoothVtheta = smoothVtheta * 0.3 + vtheta * 0.7; // 加大新值权重，减少滞后
 
     // 启用平滑后的速度指令，避免加速度过大导致不稳定
     brain->client->setVelocity(smoothVx, smoothVy, smoothVtheta, false, false, false);
@@ -1445,25 +1462,32 @@ void RobotFindBall::onHalted()
 }
 
 NodeStatus CamFastScan::onStart()
+NodeStatus CamFastScan::onStart()
 {
-    _cmdIndex = 0;
+    // 复用 _timeLastCmd 作为起始时间戳
     _timeLastCmd = brain->get_clock()->now();
-    brain->client->moveHead(_cmdSequence[_cmdIndex][0], _cmdSequence[_cmdIndex][1]);
     return NodeStatus::RUNNING;
 }
 
 NodeStatus CamFastScan::onRunning()
 {
-    double interval = getInput<double>("msecs_interval").value();
-    if (brain->msecsSince(_timeLastCmd) < interval) return NodeStatus::RUNNING;
+    // 使用 Lissajous 曲线进行连续扫描，替代之前的离散点切换
+    // 这能提供更平滑、更快速且对电机更友好的扫描动作
+    // 同时也解决了"扭得太快"的问题，因为运动是连续正弦波
+    double t = brain->msecsSince(_timeLastCmd) / 1000.0;
+    
+    // 参数设定:
+    // Yaw: 幅度 1.1 rad (约60度), 周期 3.0s
+    // Pitch: 中心 0.65 rad (向下看), 幅度 0.25 rad, 频率为 Yaw 的 2 倍 (形成 8 字形闭环)
+    
+    double yaw = 1.1 * sin(2 * M_PI * t / 3.0);
+    double pitch = 0.65 + 0.25 * sin(4 * M_PI * t / 3.0);
+    
+    brain->client->moveHead(pitch, yaw);
+    
+    // 扫描持续 3.0 秒 (一个完整周期) 后退出
+    if (t > 3.0) return NodeStatus::SUCCESS;
 
-    // else 
-    if (_cmdIndex >= 6) return NodeStatus::SUCCESS;
-
-    // else
-    _cmdIndex++;
-    _timeLastCmd = brain->get_clock()->now();
-    brain->client->moveHead(_cmdSequence[_cmdIndex][0], _cmdSequence[_cmdIndex][1]);
     return NodeStatus::RUNNING;
 }
 

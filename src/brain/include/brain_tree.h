@@ -185,7 +185,7 @@ public:
     static PortsList providedPorts()
     {
         return {
-            InputPort<double>("msecs_interval", 300, "在同一个位置停留多少毫秒"),
+            InputPort<double>("msecs_interval", 800, "在同一个位置停留多少毫秒"),
         };
     }
 

@@ -42,16 +42,28 @@ int RobotClient::moveHead(double pitch, double yaw)
         initialized = true;
     }
     
-    // 平滑因子策略：
-    // 1. 如果移动幅度大 (>20度)，说明是在找球/扫视，使用小因子 (0.15) 让动作柔和
-    // 2. 如果移动幅度小，说明是在追踪/锁定，使用大因子 (0.6) 保证响应速度，否则跟不上底盘旋转
+    // 平滑因子策略 (根据球是否可见区分模式)：
+    bool seeingBall = brain->data->ballDetected;
     double diff = max(fabs(pitch - lastPitch), fabs(yaw - lastYaw));
-    double smoothFactor = 0.6; // 默认快响应
-    
-    if (diff > deg2rad(20)) {
-        smoothFactor = 0.15; // 大幅度移动变慢
-    } else if (diff > deg2rad(10)) {
-        smoothFactor = 0.3;  // 过渡区
+    double smoothFactor = 0.5;
+
+    if (seeingBall) {
+        // 【追球模式】: 响应优先，必须跟上球的运动
+        if (diff > deg2rad(20)) {
+            smoothFactor = 0.8; // 极速响应：大角度修正
+        } else if (diff > deg2rad(3)) {
+            smoothFactor = 0.5; // 正常跟踪
+        } else {
+            smoothFactor = 0.3; // 微小移动防抖
+        }
+    } else {
+        // 【找球模式】: 平滑优先，保护电机，防止画面模糊
+        // 扫描动作因为跨度大，如果不用低系数平滑，会非常猛烈
+        if (diff > deg2rad(10)) {
+            smoothFactor = 0.15; // 慢速柔和的大范围扫描
+        } else {
+            smoothFactor = 0.3;  // 普通调整
+        }
     }
 
     double smoothedPitch = lastPitch + (pitch - lastPitch) * smoothFactor;
