@@ -676,11 +676,34 @@ NodeStatus Assist::tick() {
 
 
     Pose2D targetPose;
-    targetPose.x = isSecondary ? ballPos.x - 4.0 : ballPos.x - 2.0;
-    targetPose.x = max(targetPose.x, - fd.length / 2.0 + distToGoalline); 
-    targetPose.y = ballPos.y * (targetPose.x + fd.length / 2.0) / (ballPos.x + fd.length / 2.0); 
-    if (has2Assists) { 
-        targetPose.y += isSecondary ? - 0.5 : 0.5;
+    
+    // 【3v3 无球防守】 切断传球路线逻辑
+    auto [foundMarkingTarget, markingTarget] = brain->findBestMarkingTarget();
+    
+    // 只有在防守态势（球在己方半场或对方控球）下才执行盯人
+    bool isDefensive = ballPos.x < 0 || foundMarkingTarget; 
+    
+    if (isDefensive && foundMarkingTarget) {
+        log("Executing Passing Lane Blocking");
+        // 目标位置：球与盯防目标的连线中点，略微偏后，封锁传球路线
+        targetPose.x = (ballPos.x + markingTarget.posToField.x) / 2.0;
+        targetPose.y = (ballPos.y + markingTarget.posToField.y) / 2.0;
+        
+        // 微调：稍微退后一点，防止被穿裆/冲过
+        targetPose.x -= 0.5;
+        
+        // 边界限制
+        targetPose.x = max(targetPose.x, - fd.length / 2.0 + distToGoalline);
+        targetPose.y = cap(targetPose.y, fd.width/2.0 - 0.5, -fd.width/2.0 + 0.5);
+    } 
+    else {
+        // 进攻/普通态势：保持原有的"球后接应"逻辑
+        targetPose.x = isSecondary ? ballPos.x - 4.0 : ballPos.x - 2.0;
+        targetPose.x = max(targetPose.x, - fd.length / 2.0 + distToGoalline); 
+        targetPose.y = ballPos.y * (targetPose.x + fd.length / 2.0) / (ballPos.x + fd.length / 2.0); 
+        if (has2Assists) { 
+            targetPose.y += isSecondary ? - 0.5 : 0.5;
+        }
     }
 
     // 【3v3对抗策略】评估对抗时机
@@ -902,7 +925,28 @@ NodeStatus CalcKickDir::tick()
         return bestAngle;
     };
 
-    if (thetal - thetar < crossThreshold && brain->data->ball.posToField.x > fd.circleRadius) {
+    // 【风险管理】危险区域定义 (己方禁区前沿外加 1.0m)
+    double DANGER_LINE = -fd.length / 2.0 + fd.penaltyAreaLength + 1.0;
+    
+    // 1. 如果在危险区域，强制进入解围模式
+    if (brain->data->robotPoseToField.x < DANGER_LINE && !brain->isDefensing()) { // isDefensing()通常指由goalie执行
+        brain->data->kickType = "clear";
+        color = 0xFF0000FF; // 红色：高危/解围
+
+        // 解围方向策略：
+        // 1. 如果朝向前方 (-60 ~ 60度)，直接顺势踢
+        // 2. 否则强制踢向正前方 0 度
+        double currentTheta = brain->data->robotPoseToField.theta;
+        if (fabs(currentTheta) < M_PI / 3.0) {
+            brain->data->kickDir = currentTheta;
+        } else {
+            brain->data->kickDir = 0.0;
+        }
+        
+        // 简单的防乌龙检查：绝对不能踢向自家球门 (自家球门在 -180/180 方向)
+        // 由于上面限制了方向为 0 或 +/- 60度，这已经避免了乌龙
+    }
+    else if (thetal - thetar < crossThreshold && brain->data->ball.posToField.x > fd.circleRadius) {
         brain->data->kickType = "cross";
         color = 0xFF00FFFF;
         brain->data->kickDir = atan2(
@@ -1008,7 +1052,23 @@ NodeStatus StrikerDecide::tick() {
     {
         newDecision = "chase";
         color = 0x0000FFFF;
-    } else if (
+    } 
+    // 【风险管理】解围检测 - 最高优先级射门
+    else if (brain->data->kickType == "clear") {
+        // 解围条件极度放宽：
+        // 1. 球在射程内 (<1.5m, 不需要很近)
+        // 2. 角度不是太离谱 (fabs(ballYaw) < M_PI/2)
+        // 3. 忽略 reachedKickDir，球在脚下就踢
+        if (ballRange < 1.5 && fabs(ballYaw) < M_PI / 2.0) {
+             newDecision = "clear"; //这里改为clear，以便XML区分
+             color = 0xFF0000FF;
+             log("Clearance kick triggered!");
+        } else {
+             newDecision = "adjust"; // 稍微调整一下
+             color = 0xFFFF00FF;
+        }
+    }
+    else if (
         (
             (angleGoodForKick && !brain->data->isFreekickKickingOff) 
             || reachedKickDir

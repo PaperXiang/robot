@@ -184,6 +184,13 @@ public:
      */
     std::tuple<bool, double, double> evaluateContactOpportunity();
 
+    /**
+     * @brief 寻找最佳盯人目标 (3v3 无球防守)
+     * 
+     * @return tuple<bool, GameObject> {是否找到目标, 目标机器人对象}
+     */
+    std::tuple<bool, GameObject> findBestMarkingTarget();
+
 private:
     void loadConfig();
 

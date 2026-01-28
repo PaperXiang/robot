@@ -2929,6 +2929,72 @@ std::tuple<bool, double, double> Brain::evaluateContactOpportunity() {
     return {false, 0, 0};
 }
 
+/**
+ * @brief 寻找最佳盯人目标 (3v3 无球防守)
+ * 算法：
+ * 1. 找出对手离球最近的人（视为持球人），将其排除
+ * 2. 在剩余对手中，评分：
+ *    - 离球越近威胁越大（接球概率高）
+ *    - 离我方球门越近威胁越大（射门威胁大）
+ */
+std::tuple<bool, GameObject> Brain::findBestMarkingTarget() {
+    auto robots = data->getRobots();
+    auto ballPos = data->ball.posToField;
+    
+    if (robots.empty()) return {false, GameObject()};
+
+    // 1. 找到持球人 (离球最近的对手)
+    double minBallDist = 1e9;
+    int carrierIdx = -1;
+    
+    for (int i = 0; i < robots.size(); i++) {
+        double dist = norm(robots[i].posToField.x - ballPos.x, robots[i].posToField.y - ballPos.y);
+        if (dist < minBallDist) {
+            minBallDist = dist;
+            carrierIdx = i;
+        }
+    }
+    
+    // 如果最近对手离球都超过3米，说明没人控球，没必要盯无球人，直接去抢球（由其他逻辑处理）
+    // 或者如果只有一个对手，那他就是全部威胁，也不需要盯防其他人
+    if (minBallDist > 3.0 || robots.size() < 2) {
+        return {false, GameObject()};
+    }
+    
+    // 2. 在剩余对手中寻找最佳盯防目标
+    double maxThreatScore = -1.0;
+    int bestTargetIdx = -1;
+    
+    for (int i = 0; i < robots.size(); i++) {
+        if (i == carrierIdx) continue; // 跳过持球人
+        
+        auto& robot = robots[i];
+        
+        // 距离球的距离 (越短接球越快)
+        double distToBall = norm(robot.posToField.x - ballPos.x, robot.posToField.y - ballPos.y);
+        
+        // 距离我方球门的距离 (越短进球威胁越大)
+        double distToGoal = norm(robot.posToField.x + config->fieldDimensions.length/2.0, robot.posToField.y);
+        
+        // 威胁评分公式：
+        // 距离球越近越好 (权重 0.4)
+        // 距离门越近越好 (权重 0.6)
+        // 使用倒数来评分，防止除零加个小量
+        double score = 0.4 * (10.0 / (distToBall + 0.1)) + 0.6 * (10.0 / (distToGoal + 0.1));
+        
+        if (score > maxThreatScore) {
+            maxThreatScore = score;
+            bestTargetIdx = i;
+        }
+    }
+    
+    if (bestTargetIdx != -1) {
+        return {true, robots[bestTargetIdx]};
+    }
+    
+    return {false, GameObject()};
+}
+
 
 void Brain::updateLogFile() {
     if (config->rerunLogEnableFile && msecsSince(data->timeLastLogSave) > config->rerunLogMaxFileMins * 60000)
