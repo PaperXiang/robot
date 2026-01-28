@@ -125,13 +125,18 @@ private:
     rclcpp::Time _lastCmdTime;
     rclcpp::Time _lastNonZeroCmdTime;
 
-    // 速度平滑器 - 提升行走稳定性（借鉴论文AMP思想）
+    // 速度平滑器 - 提升行走稳定性（借鉴论文AMP思想，优化参数版本）
     class VelocitySmoother {
     private:
         std::deque<std::array<double, 3>> velocity_history_; // [vx, vy, vtheta]
-        static constexpr int HISTORY_SIZE = 8;
-        static constexpr double MAX_ACCEL = 0.8; // m/s² 最大加速度限制
-        static constexpr double DT = 0.1; // 假设100ms控制周期
+        std::array<double, 3> last_output_ = {0, 0, 0};      // 上一次输出，用于指数平滑
+        
+        // 优化后的参数（保持高速同时提升稳定性）
+        static constexpr int HISTORY_SIZE = 10;              // 增加历史窗口以获得更平滑的输出
+        static constexpr double MAX_ACCEL_LINEAR = 0.6;      // m/s² 线性速度最大加速度（降低以提升稳定性）
+        static constexpr double MAX_ACCEL_ANGULAR = 0.8;     // rad/s² 角速度最大加速度（保持响应性）
+        static constexpr double DT = 0.1;                    // 100ms控制周期
+        static constexpr double SMOOTH_FACTOR = 0.85;        // 指数平滑因子（0-1，越大越平滑）
         
     public:
         std::array<double, 3> smooth(double vx, double vy, double vtheta) {
@@ -140,11 +145,12 @@ private:
                 velocity_history_.pop_front();
             }
             
-            // 加权平均（越新的速度权重越大）
+            // 加权平均（越新的速度权重越大，使用二次权重提升近期值的影响）
             std::array<double, 3> smoothed = {0, 0, 0};
             double total_weight = 0;
             for (size_t i = 0; i < velocity_history_.size(); i++) {
-                double weight = (i + 1.0) / velocity_history_.size();
+                // 使用二次加权，使最新值的权重更大
+                double weight = std::pow((i + 1.0) / velocity_history_.size(), 2);
                 smoothed[0] += weight * velocity_history_[i][0];
                 smoothed[1] += weight * velocity_history_[i][1];
                 smoothed[2] += weight * velocity_history_[i][2];
@@ -154,22 +160,34 @@ private:
             smoothed[1] /= total_weight;
             smoothed[2] /= total_weight;
             
-            // 加速度限制（防止速度突变）
+            // 指数移动平均（进一步平滑输出）
+            smoothed[0] = SMOOTH_FACTOR * last_output_[0] + (1.0 - SMOOTH_FACTOR) * smoothed[0];
+            smoothed[1] = SMOOTH_FACTOR * last_output_[1] + (1.0 - SMOOTH_FACTOR) * smoothed[1];
+            smoothed[2] = SMOOTH_FACTOR * last_output_[2] + (1.0 - SMOOTH_FACTOR) * smoothed[2];
+            
+            // 加速度限制（防止速度突变，线性和角速度分开限制）
             if (velocity_history_.size() >= 2) {
-                auto last = velocity_history_[velocity_history_.size() - 2];
-                for (int i = 0; i < 3; i++) {
-                    double delta = smoothed[i] - last[i];
-                    if (std::fabs(delta) > MAX_ACCEL * DT) {
-                        smoothed[i] = last[i] + std::copysign(MAX_ACCEL * DT, delta);
+                // 线性速度加速度限制
+                for (int i = 0; i < 2; i++) {
+                    double delta = smoothed[i] - last_output_[i];
+                    if (std::fabs(delta) > MAX_ACCEL_LINEAR * DT) {
+                        smoothed[i] = last_output_[i] + std::copysign(MAX_ACCEL_LINEAR * DT, delta);
                     }
+                }
+                // 角速度加速度限制
+                double delta_theta = smoothed[2] - last_output_[2];
+                if (std::fabs(delta_theta) > MAX_ACCEL_ANGULAR * DT) {
+                    smoothed[2] = last_output_[2] + std::copysign(MAX_ACCEL_ANGULAR * DT, delta_theta);
                 }
             }
             
+            last_output_ = smoothed;
             return smoothed;
         }
         
         void reset() {
             velocity_history_.clear();
+            last_output_ = {0, 0, 0};
         }
     };
     

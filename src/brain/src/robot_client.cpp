@@ -51,17 +51,26 @@ int RobotClient::standUp()
 int RobotClient::quickStandUp()
 {
     // 快速起身策略：
-    // 1. 先发送起身指令（底层SDK会处理）
-    // 2. 记录起身开始时间，用于后续快速恢复控制
+    // 1. 先重置速度平滑器，避免残留历史速度影响起身后的运动
+    // 2. 发送起身指令（底层SDK会处理具体起身动作）
+    // 3. 记录起身开始时间，用于后续快速恢复控制
     
     brain->log->setTimeNow();
     brain->log->log("RobotClient/quickStandUp",
                     rerun::TextLog("Executing quick stand up sequence"));
     
+    // 重置速度平滑器，确保起身后速度控制从零开始
+    velocity_smoother_.reset();
+    
+    // 重置上次速度命令
+    _vx = 0; _vy = 0; _vtheta = 0;
+    
     // 发送起身指令
     booster_interface::msg::BoosterApiReqMsg msg;
     msg.api_id = static_cast<int64_t>(booster::robot::b1::LocoApiId::kGetUp);
     nlohmann::json body;
+    // 可以在这里添加额外的参数来加速起身，具体取决于SDK支持
+    // body["priority"] = "high";  // 如果SDK支持优先级参数
     msg.body = body.dump();
     
     int result = call(msg);
@@ -69,6 +78,10 @@ int RobotClient::quickStandUp()
     if (result == 0) {
         brain->log->log("RobotClient/quickStandUp",
                         rerun::TextLog("Quick stand up command sent successfully"));
+    } else {
+        brain->log->log("RobotClient/quickStandUp",
+                        rerun::TextLog(format("Quick stand up command failed with code: %d", result))
+                            .with_level(rerun::TextLogLevel::Error));
     }
     
     return result;

@@ -304,7 +304,7 @@ public:
         return {
             InputPort<double>("min_msec_kick", 500, "踢球动作最少执行多少毫秒"),
             InputPort<double>("msecs_stablize", 1000, "稳定多少毫秒"),
-            InputPort<double>("speed_limit", 0.8, "速度最大值"),
+            InputPort<double>("speed_limit", 1.0, "速度最大值"),
         };
     }
 
@@ -569,20 +569,33 @@ private:
     Brain *brain;
 };
 
-// 快速起身节点 - 优化起身速度
-class QuickStandUp : public SyncActionNode
+// 快速起身节点 - 优化起身速度和稳定性
+class QuickStandUp : public StatefulActionNode
 {
 public:
-    QuickStandUp(const string &name, const NodeConfig &config, Brain *_brain) : SyncActionNode(name, config), brain(_brain) {}
+    QuickStandUp(const string &name, const NodeConfig &config, Brain *_brain) 
+        : StatefulActionNode(name, config), brain(_brain) {}
 
     static PortsList providedPorts() {
-        return {};
+        return {
+            InputPort<int>("timeout_ms", 8000, "起身超时时间(毫秒)"),
+            InputPort<int>("stabilize_ms", 500, "起身后稳定等待时间(毫秒)"),
+            InputPort<bool>("pre_adjust", true, "是否进行起身前姿态预调整"),
+        };
     }
 
-    NodeStatus tick() override;
+    NodeStatus onStart() override;
+    NodeStatus onRunning() override;
+    void onHalted() override;
 
 private:
     Brain *brain;
+    rclcpp::Time _startTime;
+    rclcpp::Time _standUpCommandTime;
+    enum class Phase { PRE_ADJUST, STANDING_UP, STABILIZING, DONE };
+    Phase _phase = Phase::PRE_ADJUST;
+    int _preAdjustCount = 0;
+    static constexpr int MAX_PRE_ADJUST = 3;
 };
 
 

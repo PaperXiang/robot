@@ -1491,12 +1491,16 @@ NodeStatus CheckAndStandUp::tick()
     return NodeStatus::SUCCESS;
 }
 
-// 快速起身节点 - 优化起身速度
-NodeStatus QuickStandUp::tick()
+// 快速起身节点 - 优化起身速度和稳定性
+NodeStatus QuickStandUp::onStart()
 {
+    _startTime = brain->get_clock()->now();
+    _phase = Phase::PRE_ADJUST;
+    _preAdjustCount = 0;
+    
     brain->log->setTimeNow();
     brain->log->log("recovery/quick_standup", 
-                    rerun::TextLog("QuickStandUp node ticked"));
+                    rerun::TextLog("QuickStandUp started"));
     
     // 检查是否需要起身
     if (brain->tree->getEntry<bool>("gc_is_under_penalty") || 
@@ -1508,19 +1512,150 @@ NodeStatus QuickStandUp::tick()
     
     // 检查是否已跌倒
     if (brain->data->recoveryState != RobotRecoveryState::HAS_FALLEN) {
-        return NodeStatus::SUCCESS;
-    }
-    
-    // 执行快速起身
-    if (brain->data->currentRobotModeIndex == 3) {
         brain->log->log("recovery/quick_standup", 
-                        rerun::TextLog("Executing quick stand up"));
-        brain->client->quickStandUp();
-        brain->speak("Quick recovery");
+                        rerun::TextLog("Skip: not fallen"));
         return NodeStatus::SUCCESS;
     }
     
-    return NodeStatus::SUCCESS;
+    // 检查是否可以执行起身
+    if (brain->data->currentRobotModeIndex != 3) {
+        brain->log->log("recovery/quick_standup", 
+                        rerun::TextLog(format("Skip: robot mode index = %d (expected 3)", 
+                                             brain->data->currentRobotModeIndex)));
+        return NodeStatus::SUCCESS;
+    }
+    
+    bool preAdjust = getInput<bool>("pre_adjust").value();
+    if (preAdjust) {
+        // 预调整阶段：让机器人进入更好的起身姿态
+        brain->log->log("recovery/quick_standup", 
+                        rerun::TextLog("Starting pre-adjust phase"));
+        _phase = Phase::PRE_ADJUST;
+    } else {
+        // 直接进入起身阶段
+        _phase = Phase::STANDING_UP;
+        brain->client->quickStandUp();
+        _standUpCommandTime = brain->get_clock()->now();
+        brain->speak("Quick recovery");
+        brain->log->log("recovery/quick_standup", 
+                        rerun::TextLog("Executing quick stand up (no pre-adjust)"));
+    }
+    
+    return NodeStatus::RUNNING;
+}
+
+NodeStatus QuickStandUp::onRunning()
+{
+    brain->log->setTimeNow();
+    
+    int timeoutMs = getInput<int>("timeout_ms").value();
+    int stabilizeMs = getInput<int>("stabilize_ms").value();
+    
+    double elapsedMs = brain->msecsSince(_startTime);
+    
+    // 超时检查
+    if (elapsedMs > timeoutMs) {
+        brain->log->log("recovery/quick_standup", 
+                        rerun::TextLog(format("Timeout after %.0f ms", elapsedMs))
+                            .with_level(rerun::TextLogLevel::Warning));
+        brain->speak("Recovery timeout");
+        return NodeStatus::FAILURE;
+    }
+    
+    switch (_phase) {
+        case Phase::PRE_ADJUST: {
+            // 预调整阶段：等待一小段时间让机器人稳定
+            // 这有助于确定跌倒方向并准备起身
+            _preAdjustCount++;
+            
+            if (_preAdjustCount >= MAX_PRE_ADJUST) {
+                // 预调整完成，发送起身命令
+                _phase = Phase::STANDING_UP;
+                brain->client->quickStandUp();
+                _standUpCommandTime = brain->get_clock()->now();
+                brain->speak("Quick recovery");
+                brain->log->log("recovery/quick_standup", 
+                                rerun::TextLog("Pre-adjust complete, executing stand up"));
+            } else {
+                brain->log->log("recovery/quick_standup", 
+                                rerun::TextLog(format("Pre-adjust %d/%d", _preAdjustCount, MAX_PRE_ADJUST)));
+            }
+            return NodeStatus::RUNNING;
+        }
+        
+        case Phase::STANDING_UP: {
+            // 等待起身完成
+            double standUpElapsed = brain->msecsSince(_standUpCommandTime);
+            
+            // 检查机器人是否已经站起来了
+            if (brain->data->recoveryState == RobotRecoveryState::IS_READY ||
+                brain->data->currentRobotModeIndex == 8) {
+                // 已站起，进入稳定阶段
+                _phase = Phase::STABILIZING;
+                _standUpCommandTime = brain->get_clock()->now(); // 重用作稳定开始时间
+                brain->log->log("recovery/quick_standup", 
+                                rerun::TextLog(format("Stand up complete in %.0f ms, stabilizing", standUpElapsed)));
+                return NodeStatus::RUNNING;
+            }
+            
+            // 检查是否还在起身中
+            if (brain->data->recoveryState == RobotRecoveryState::IS_GETTING_UP) {
+                brain->log->log("recovery/quick_standup", 
+                                rerun::TextLog(format("Standing up... (%.0f ms)", standUpElapsed)));
+            }
+            
+            // 如果在起身过程中等待时间过长，可能需要重试
+            if (standUpElapsed > 5000 && brain->data->recoveryState == RobotRecoveryState::HAS_FALLEN) {
+                // 5秒后仍处于跌倒状态，重试起身命令
+                brain->client->quickStandUp();
+                _standUpCommandTime = brain->get_clock()->now();
+                brain->log->log("recovery/quick_standup", 
+                                rerun::TextLog("Retrying stand up command")
+                                    .with_level(rerun::TextLogLevel::Warning));
+            }
+            
+            return NodeStatus::RUNNING;
+        }
+        
+        case Phase::STABILIZING: {
+            // 稳定阶段：等待机器人完全稳定后再继续
+            double stabilizeElapsed = brain->msecsSince(_standUpCommandTime);
+            
+            if (stabilizeElapsed >= stabilizeMs) {
+                // 稳定完成
+                brain->log->log("recovery/quick_standup", 
+                                rerun::TextLog(format("QuickStandUp complete! Total time: %.0f ms", elapsedMs)));
+                brain->speak("Ready");
+                
+                // 重置恢复计数器
+                brain->data->recoveryPerformedRetryCount = 0;
+                brain->data->recoveryPerformed = false;
+                
+                // 重置速度平滑器（避免残留历史速度影响起身后的运动）
+                brain->client->setVelocity(0, 0, 0);
+                
+                return NodeStatus::SUCCESS;
+            }
+            
+            // 继续等待稳定
+            brain->client->setVelocity(0, 0, 0); // 保持静止
+            brain->log->log("recovery/quick_standup", 
+                            rerun::TextLog(format("Stabilizing... (%.0f/%d ms)", stabilizeElapsed, stabilizeMs)));
+            return NodeStatus::RUNNING;
+        }
+        
+        case Phase::DONE:
+        default:
+            return NodeStatus::SUCCESS;
+    }
+}
+
+void QuickStandUp::onHalted()
+{
+    brain->log->setTimeNow();
+    brain->log->log("recovery/quick_standup", 
+                    rerun::TextLog("QuickStandUp halted"));
+    _phase = Phase::DONE;
 }
 
 
