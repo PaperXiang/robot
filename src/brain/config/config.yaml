@@ -1,7 +1,7 @@
 brain_node:
   ros__parameters:
     game:
-      team_id: 29 # must be consistant with GameControl
+      team_id: 112 # must be consistant with GameControl
       player_id: 1 # 1 | 2 | 3 | 4 | 5
       field_type: "adult_size" # adult_size | kid_size | robo_league
       player_role: "striker" # striker | goal_keeper
@@ -86,7 +86,7 @@ brain_node:
         cam_fov_x: 90.0 
         cam_fov_y: 60.0 
     
-    game_control_ip: "127.0.0.1"
+    game_control_ip: "192.168.50.228"
 
     # for fun and debug
     sound:
