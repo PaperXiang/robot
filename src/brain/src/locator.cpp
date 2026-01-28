@@ -334,7 +334,20 @@ LocateResult Locator::locateRobot(vector<FieldMarker> markers_r, PoseBox2D const
             return res;
         }
 
-        if (genParticles())
+        // 优化1: 自适应重采样
+        // 只有当有效样本数 (ESS) 过低时才进行重采样
+        // 这样可以避免在粒子分布良好时引入不必要的重采样方差
+        double ess = calcEffectiveSampleSize();
+        if (ess < essThreshold * hypos.rows()) 
+        {
+            systematicResample(); 
+        }
+
+        // 优化2 & 3: 观测引导的粒子生成 + 动态粒子数
+        // 替换原本的 genParticles()
+        // 新函数会根据观测数据将部分粒子直接引导到高概率区域
+        // 并根据不确定性动态调整粒子总数 (在内部实现)
+        if (genObservationGuidedParticles(markers_r))
         {
             res.success = false;
             res.code = 1;

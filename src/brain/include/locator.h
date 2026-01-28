@@ -29,7 +29,19 @@ public:
 	double offsetShrinkRatio = 0.8;	 
 	int minMarkerCnt = 3;		 
 	double enableLog = false;		 
-	string logIP = "127.0.0.1:9876"; 
+	string logIP = "127.0.0.1:9876";
+	
+	// === 优化1: 自适应重采样参数 ===
+	double essThreshold = 0.5;  // ESS阈值比例（相对于粒子数）
+	
+	// === 优化2: 动态粒子数参数 ===
+	int baseParticles = 100;    // 基础粒子数（低不确定性）
+	int maxParticles = 500;     // 最大粒子数（高不确定性）
+	int minParticles = 50;      // 最小粒子数
+	double uncertaintyThreshold = 0.5;  // 不确定性阈值
+	
+	// === 优化3: 观测引导采样参数 ===
+	double observationGuidedRatio = 0.3; // 观测引导采样比例 
 
 	
 	const rerun::RecordingStream log = rerun::RecordingStream("locator", "locator");
@@ -69,6 +81,19 @@ public:
 	int calcProbs(vector<FieldMarker> markers_r);
 
 	Pose2D finalAdjust(vector<FieldMarker> markers_r, Pose2D pose);
+
+	// === 优化函数 ===
+	// 优化1: 计算有效样本数（ESS）
+	double calcEffectiveSampleSize();
+	
+	// 优化1: 系统重采样（低方差）
+	int systematicResample();
+	
+	// 优化2: 根据不确定性动态调整粒子数
+	int getDynamicParticleCount();
+	
+	// 优化3: 观测引导的粒子生成
+	int genObservationGuidedParticles(vector<FieldMarker> markers_r);
 
 	
 	inline double probDesity(double r, double mu, double sigma)
