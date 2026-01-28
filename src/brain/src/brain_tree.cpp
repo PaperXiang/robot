@@ -696,13 +696,30 @@ NodeStatus Assist::tick() {
         targetPose.x = max(targetPose.x, - fd.length / 2.0 + distToGoalline);
         targetPose.y = cap(targetPose.y, fd.width/2.0 - 0.5, -fd.width/2.0 + 0.5);
     } 
+    // 【保守补位】球在己方危险区，且无特定盯人任务 -> 变身为清道夫 (Sweeper)
+    else if (ballPos.x < -1.0) {
+        log("Executing Defensive Cover (Sweeper)");
+        // 死守禁区前沿，构建第二道防线
+        // 目标位置：距球门线 1.8m 处 (禁区通常 1m 左右)
+        targetPose.x = - fd.length / 2.0 + 1.8;
+        // Y轴跟随球移动，但不完全跟随，保持在中路保护
+        targetPose.y = ballPos.y * 0.4; 
+    }
     else {
-        // 进攻/普通态势：保持原有的"球后接应"逻辑
-        targetPose.x = isSecondary ? ballPos.x - 4.0 : ballPos.x - 2.0;
+        // 【进攻接应】安全三角站位
+        // 站在球的侧后方 45 度，防止阻挡 Striker 也没那么容易被断
+        double supportDist = 2.5;
+        double supportAngle = (ballPos.y > 0) ? -M_PI/4 : M_PI/4; // 在场地较空的一侧接应
+        
+        targetPose.x = ballPos.x + supportDist * cos(supportAngle);
+        targetPose.y = ballPos.y + supportDist * sin(supportAngle);
+        
         targetPose.x = max(targetPose.x, - fd.length / 2.0 + distToGoalline); 
-        targetPose.y = ballPos.y * (targetPose.x + fd.length / 2.0) / (ballPos.x + fd.length / 2.0); 
+        
+        // 多人协助时的逻辑
         if (has2Assists) { 
-            targetPose.y += isSecondary ? - 0.5 : 0.5;
+             // 第二辅助站在另一侧
+             if (isSecondary) targetPose.y = ballPos.y - supportDist * sin(supportAngle);
         }
     }
 

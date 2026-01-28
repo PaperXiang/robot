@@ -42,8 +42,18 @@ int RobotClient::moveHead(double pitch, double yaw)
         initialized = true;
     }
     
-    // 平滑因子：0.3 表示每次只移动目标距离的 30%，值越小越柔和
-    const double smoothFactor = 0.3;
+    // 平滑因子策略：
+    // 1. 如果移动幅度大 (>20度)，说明是在找球/扫视，使用小因子 (0.15) 让动作柔和
+    // 2. 如果移动幅度小，说明是在追踪/锁定，使用大因子 (0.6) 保证响应速度，否则跟不上底盘旋转
+    double diff = max(fabs(pitch - lastPitch), fabs(yaw - lastYaw));
+    double smoothFactor = 0.6; // 默认快响应
+    
+    if (diff > deg2rad(20)) {
+        smoothFactor = 0.15; // 大幅度移动变慢
+    } else if (diff > deg2rad(10)) {
+        smoothFactor = 0.3;  // 过渡区
+    }
+
     double smoothedPitch = lastPitch + (pitch - lastPitch) * smoothFactor;
     double smoothedYaw = lastYaw + (yaw - lastYaw) * smoothFactor;
     
@@ -53,7 +63,7 @@ int RobotClient::moveHead(double pitch, double yaw)
 
     brain->log->setTimeNow();
     auto level = (fabs(smoothedPitch > 2.0) || fabs(smoothedYaw > 2.0)) ? rerun::TextLogLevel::Error : rerun::TextLogLevel::Info;
-    brain->log->log("debug/move_head", rerun::TextLog(format("pitch: %.2f->%.2f, yaw: %.2f->%.2f (smooth)", pitch, smoothedPitch, yaw, smoothedYaw)).with_level(level));
+    brain->log->log("debug/move_head", rerun::TextLog(format("pitch: %.2f->%.2f, yaw: %.2f->%.2f (smooth=%.2f)", pitch, smoothedPitch, yaw, smoothedYaw, smoothFactor)).with_level(level));
 
     return call(booster_interface::CreateRotateHeadMsg(smoothedPitch, smoothedYaw));
 }
