@@ -406,9 +406,9 @@ NodeStatus Chase::tick()
         // vtheta < 0.5: 不减速 (100%)
         // vtheta = 1.0: 减速到 75%
         // vtheta >= 1.5: 保持 50% 速度
-        // REMOVED: Speed penalty during turns
-        // double turnPenalty = max(0.5, 1.0 - fabs(vtheta) * 0.33); 
-        // vx *= turnPenalty;
+        double turnPenalty = max(0.5, 1.0 - fabs(vtheta) * 0.33); 
+        vx *= turnPenalty;
+
     }
 
     vx = cap(vx, vxLimit, -vxLimit);
