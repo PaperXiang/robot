@@ -19,7 +19,7 @@ brain_node:
 
     strategy:
       ball_confidence_threshold: 50.0 
-      ball_memory_timeout: 5.0 
+      ball_memory_timeout: 1.5 
       tm_ball_dist_threshold: 2.0 
       limit_near_ball_speed: false 
       near_ball_speed_limit: 0.25 

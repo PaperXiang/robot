@@ -1454,11 +1454,13 @@ NodeStatus RobotFindBall::onStart()
     };
     log("RobotFindBall onStart");
 
+    /*
     if (brain->data->ballDetected)
     {
         brain->client->setVelocity(0, 0, 0);
         return NodeStatus::SUCCESS;
     }
+    */
     _turnDir = brain->data->ball.yawToRobot > 0 ? 1.0 : -1.0;
 
     return NodeStatus::RUNNING;
@@ -1472,11 +1474,13 @@ NodeStatus RobotFindBall::onRunning()
     };
     log("RobotFindBall onRunning");
 
+    /*
     if (brain->data->ballDetected)
     {
         brain->client->setVelocity(0, 0, 0);
         return NodeStatus::SUCCESS;
     }
+    */
 
     double vyawLimit;
     getInput("vyaw_limit", vyawLimit);
