@@ -440,8 +440,13 @@ NodeStatus Chase::tick()
         
         // 2. 横向控制 (Lateral Strafe):
         double predictedBallY = brain->data->ball.posToRobot.y + ballVelY * 0.1;
-        // 对方场地提升横向控制精度
-        double strafeGain = isDribbling ? (inOpponentHalf ? 3.0 : 2.5) : 1.5;
+        
+        // 【优化2.0】柔性非线性增益：降低敏感度，避免左右抽搐
+        double baseGain = inOpponentHalf ? 3.0 : 2.5;
+        double lateralError = fabs(predictedBallY);
+        // 系数从 15.0 降为 8.0，更平滑
+        double strafeGain = isDribbling ? (baseGain + lateralError * 8.0) : 1.5; 
+        
         vy = cap(predictedBallY * strafeGain, vyLimit, -vyLimit);
         
         // 死区过滤
@@ -450,10 +455,22 @@ NodeStatus Chase::tick()
         // 3. 前进速度 (Forward):
         vx = isDribbling ? vxLimit * 0.95 * stabilityFactor : max(0.4, min(vxLimit, ballRange));
         
-        // 4. 智能减速 (Speed Decay):
+        // 【优化2.0】分级防侧踢保护 (Graded Anti-Side-Kick)
+        // 阈值放宽到 0.08m (8cm)，给动态调整留余地
+        if (isDribbling && lateralError > 0.08) {
+             if (lateralError > 0.13) {
+                 vx *= 0.3; // 严重偏离 (>13cm)：大力减速，防止踢飞
+                 // log("Side-kick DANGER! Braking.");
+             } else {
+                 vx *= 0.7; // 中等偏离 (8-13cm)：温和减速，保持流畅
+             }
+        }
+
+        // 4. 智能减速 (Speed Decay) - 恢复一点宽容度
         double alignmentError = isDribbling ? fabs(ballYaw) : fabs(targetDir);
-        if (alignmentError > 1.2) vx *= 0.3;
-        else if (alignmentError > 0.6) vx *= 0.7;
+        // 阈值回调一些，避免稍微歪一点就减速
+        if (alignmentError > 1.0) vx *= 0.3;      
+        else if (alignmentError > 0.5) vx *= 0.6; 
         
         // 5. 接触力增强 (区域自适应):
         if (isDribbling && alignmentError < 0.3) {
