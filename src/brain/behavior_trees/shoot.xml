@@ -10,14 +10,12 @@
                 <Script code="is_lead=true; wait_for_opponent_kickoff=false; ball_out=false; control_state:=3" />
             </RunOnce>
             
-            <ReportStatus role="test_dribbler"/>
-            
             <ReactiveSequence>
                <!-- 视觉追踪功能 -->
-               <SubTree ID="CamFindAndTrackBall" _autoremap="true" />
-
+               <SubTree ID="CamFindAndTrackBall" _autoremap="true" _while="control_state>=2" />
+               
                <!-- 高速带球测试 -->
-               <Sequence>
+               <Sequence _while="control_state==3">
                     <!-- 1. 找球 -->
                     <Sequence _while="!ball_location_known">
                        <RobotFindBall vyaw_limit="1.5" />
