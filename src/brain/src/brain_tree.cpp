@@ -898,20 +898,18 @@ NodeStatus Adjust::tick()
     double deltaDir = toPInPI(kickDir - dir_rb_f);
     double ballRange = brain->data->ball.range;
     double ballYaw = brain->data->ball.yawToRobot;
-    // double st = cap(fabs(deltaDir), st_far, st_near);
-    double st = st_far; 
+    
+    // 【优化1】平滑速度过渡，而非突变
+    double distFactor = fabs(deltaDir) * ballRange;
+    double speedBlend = cap(distFactor / NEAR_THRESHOLD, 1.0, 0.0);
+    double st = st_near + (st_far - st_near) * speedBlend;
+    
     double R = ballRange; 
     double r = range;
     double sr = cap(R - r, 0.5, 0); 
-    log(format("R: %.2f, r: %.2f, sr: %.2f", R, r, sr));
+    log(format("R: %.2f, r: %.2f, sr: %.2f, st: %.2f", R, r, sr, st));
 
     log(format("deltaDir = %.1f", deltaDir));
-    if (fabs(deltaDir) * R < NEAR_THRESHOLD) {
-        log("use near speed");
-        st = st_near;
-        // sr = 0.;
-        // vxLimit = 0.1;
-    }
 
     double theta_robot_f = brain->data->robotPoseToField.theta; 
     double thetat_r = dir_rb_f + M_PI / 2 * (deltaDir > 0 ? -1.0 : 1.0) - theta_robot_f; 
@@ -919,23 +917,44 @@ NodeStatus Adjust::tick()
 
     vx = st * cos(thetat_r) + sr * cos(thetar_r); 
     vy = st * sin(thetat_r) + sr * sin(thetar_r); 
-    // vtheta = toPInPI(ballYaw + st / R * (deltaDir > 0 ? 1.0 : -1.0)); 
-    vtheta = ballYaw;
-    vtheta *= vtheta_factor; 
+    vtheta = ballYaw * vtheta_factor; 
 
     if (fabs(ballYaw) < NO_TURN_THRESHOLD) vtheta = 0.; 
-    if (
-        fabs(ballYaw) > TURN_FIRST_THRESHOLD 
-        && fabs(deltaDir) < M_PI / 4
-    ) { 
-        // 不再原地站立，而是保持低速弧线行进
-        vx = 0.15;
-        vy = 0.05;
+    
+    // 【优化2】转向优先模式下不要过度减速
+    if (fabs(ballYaw) > TURN_FIRST_THRESHOLD 
+        && fabs(deltaDir) < M_PI / 4) { 
+        // 保持合理速度而不是硬编码 0.15
+        vx = max(0.3, vx * 0.6);
+        vy = vy * 0.5;
     }
 
     vx = cap(vx, vxLimit, -0.);
     vy = cap(vy, vyLimit, -vyLimit);
     vtheta = cap(vtheta, vthetaLimit, -vthetaLimit);
+    
+    // 【新增】边界保护：防止调整时越界
+    auto fd = brain->config->fieldDimensions;
+    auto robotPos = brain->data->robotPoseToField;
+    double ballPosY = brain->data->ball.posToField.y;
+    
+    const double BOUNDARY_DANGER_ZONE = 0.4;  // 距离边线0.4米内减速
+    double robotDistToSideline = fd.width / 2.0 - fabs(robotPos.y);
+    double ballDistToSideline = fd.width / 2.0 - fabs(ballPosY);
+    
+    // 如果机器人接近边线，限制向边线方向的移动
+    if (robotDistToSideline < BOUNDARY_DANGER_ZONE) {
+        bool vyTowardsBoundary = (robotPos.y > 0 && vy > 0) || (robotPos.y < 0 && vy < 0);
+        if (vyTowardsBoundary) {
+            vy *= 0.3;  // 大幅降低靠近边线的横向速度
+        }
+    }
+    
+    // 如果球接近边线，更谨慎
+    if (ballDistToSideline < BOUNDARY_DANGER_ZONE) {
+        vy *= 0.5;  // 整体降低横向速度，避免把球推出界
+        vx = min(vx, 0.5);  // 降低前进速度
+    }
     
     log(format("vx: %.1f vy: %.1f vtheta: %.1f", vx, vy, vtheta));
     brain->client->setVelocity(vx, vy, vtheta);
@@ -1063,6 +1082,27 @@ NodeStatus CalcKickDir::tick()
         }
         
         if (brain->data->ball.posToField.x > brain->config->fieldDimensions.length / 2) brain->data->kickDir = 0; 
+        
+        // 【新增】边界安全检测：防止调整时把球踢出边线
+        const double SIDELINE_SAFETY_MARGIN = 0.5;  // 距离边线0.5米内启用安全模式
+        double ballDistToSideline = fd.width / 2.0 - fabs(bPos.y);
+        
+        if (ballDistToSideline < SIDELINE_SAFETY_MARGIN) {
+            // 计算当前 kickDir 会不会让球更靠近边线
+            double kickDirY = sin(brain->data->kickDir);
+            bool kickTowardsBoundary = (bPos.y > 0 && kickDirY > 0) || (bPos.y < 0 && kickDirY < 0);
+            
+            if (kickTowardsBoundary) {
+                // 强制修正射门方向：指向场地中心方向
+                double safeAngle = atan2(-bPos.y * 0.5, fd.length / 2.0 - bPos.x);
+                brain->data->kickDir = safeAngle;
+                color = 0xFFA500FF;  // 橙色：边界安全模式
+                
+                brain->log->setTimeNow();
+                brain->log->log("debug/CalcKickDir", 
+                    rerun::TextLog("Boundary safety: ball too close to sideline, adjusted kick direction"));
+            }
+        }
     }
 
     brain->log->setTimeNow();
@@ -1163,7 +1203,7 @@ NodeStatus StrikerDecide::tick() {
         && brain->data->ballDetected
         && fabs(brain->data->ball.yawToRobot) < M_PI / 2.
         && !avoidKick
-        && ball.range < 2.5  // 优化: 从 2.0m 增加到 2.5m，允许更远距离射门
+        && ball.range < 1.5  // 平衡值: 1.5米兼顾速度与稳定，crabWalk有足够加速距离
     ) {
         if (brain->data->kickType == "cross") newDecision = "cross";
         else newDecision = "kick";      
@@ -1172,7 +1212,7 @@ NodeStatus StrikerDecide::tick() {
     }
     // 【3v3优化】快速射门模式 - 减少射门延迟
     else if (
-        ballRange < 1.2  // 近距离
+        ballRange < 0.9  // 快速射门保守一点，确保精度（0.9米）
         && fabs(deltaDir) < M_PI / 3.6  // 角度基本合适(50度内)
         && ball.posToField.x > brain->config->fieldDimensions.length / 4  // 在对方半场
         && brain->data->ballDetected
