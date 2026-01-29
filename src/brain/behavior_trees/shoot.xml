@@ -2,22 +2,17 @@
 
 <root BTCPP_format="4" >
     <include path="./subtrees/subtree_cam_find_and_track_ball.xml" />
-    <include path="./subtrees/subtree_find_ball.xml" />
-    <include path="./subtrees/subtree_auto_standup_and_locate.xml" />
 
      <BehaviorTree ID="MainTree">
         <Sequence name="root">
             <!-- 强制初始化状态，绕过裁判机和队友逻辑 -->
             <RunOnce>
-                <Script code="is_lead=true; wait_for_opponent_kickoff=false; ball_out=false" />
+                <Script code="is_lead=true; wait_for_opponent_kickoff=false; ball_out=false; control_state:=3" />
             </RunOnce>
             
             <ReportStatus role="test_dribbler"/>
             
             <ReactiveSequence>
-               <!-- 自动起身功能 -->
-               <SubTree ID="AutoGetUpAndLocate" _autoremap="true" />
-               
                <!-- 视觉追踪功能 -->
                <SubTree ID="CamFindAndTrackBall" _autoremap="true" />
 
