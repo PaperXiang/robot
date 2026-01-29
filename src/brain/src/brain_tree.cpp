@@ -404,48 +404,63 @@ NodeStatus Chase::tick()
         vy = 0.5 * sin(avoidDir);
         vtheta = ballYaw;
     } else {
-        // --- 高速带球核心算法 5.0 (Balanced Control) ---
+        // --- 高速带球核心算法 6.0 (Opponent-Field Adaptive Control) ---
         bool isCloseControl = (ballRange < 0.6);
         bool isDribbling = (ballRange < 0.35);
         
+        // 【新增】区域自适应：对方场地提升稳定性
+        auto robotX = brain->data->robotPoseToField.x;
+        auto fieldLength = brain->config->fieldDimensions.length;
+        auto penaltyLength = brain->config->fieldDimensions.penaltyAreaLength;
+        
+        // 区域划分
+        bool inOpponentHalf = robotX > 0;  // 对方半场
+        bool nearOpponentGoal = robotX > fieldLength / 2.0 - penaltyLength - 0.5;  // 禁区前0.5米
+        
+        // 区域系数：对方场地越深入，控制越保守
+        double stabilityFactor = 1.0;
+        if (nearOpponentGoal) {
+            stabilityFactor = 0.7;  // 禁区前：大幅降速，提升稳定性
+        } else if (inOpponentHalf) {
+            stabilityFactor = 0.85;  // 对方半场：适度降速
+        }
+        // 己方半场：stabilityFactor = 1.0，保持高速
+        
         // 1. 姿态控制 (Orientation): 
-        // 关键优化：带球时既要看着球门，也要对准球中心。合并两者的权重。
         double angleToGoal = toPInPI(kickDir - brain->data->robotPoseToField.theta);
         if (isDribbling) {
-            // 70% 权重面向球门，30% 权重修正球的对齐，确保不丢球
-            vtheta = angleToGoal * 0.8 + ballYaw * 1.5;
+            // 对方场地提升"看球"权重，确保不丢球
+            double ballWeight = inOpponentHalf ? 2.0 : 1.5;
+            vtheta = angleToGoal * 0.8 + ballYaw * ballWeight;
         } else if (isCloseControl) {
             vtheta = angleToGoal * 0.5 + ballYaw * 2.0;
         } else {
-            vtheta = targetDir * 2.5; // 远距离直接奔向目标点
+            vtheta = targetDir * 2.5;
         }
         
         // 2. 横向控制 (Lateral Strafe):
-        // 优化：球速预测仅作为补偿，且大幅降低 Strafe Gain 以消除抖动
         double predictedBallY = brain->data->ball.posToRobot.y + ballVelY * 0.1;
-        double strafeGain = isDribbling ? 2.5 : 1.5;
+        // 对方场地提升横向控制精度
+        double strafeGain = isDribbling ? (inOpponentHalf ? 3.0 : 2.5) : 1.5;
         vy = cap(predictedBallY * strafeGain, vyLimit, -vyLimit);
         
-        // 死区过滤：球如果在中心 1cm 内，不要频繁横移
+        // 死区过滤
         if (fabs(brain->data->ball.posToRobot.y) < 0.015) vy *= 0.1;
 
         // 3. 前进速度 (Forward):
-        // 正常追赶时速度取限制，对齐后直接拉满实现“推土机”式高速带球
-        vx = isDribbling ? vxLimit * 0.95 : max(0.4, min(vxLimit, ballRange));
+        vx = isDribbling ? vxLimit * 0.95 * stabilityFactor : max(0.4, min(vxLimit, ballRange));
         
         // 4. 智能减速 (Speed Decay):
-        // 仅在角度偏差极大时才大幅减速，保证高速性能
         double alignmentError = isDribbling ? fabs(ballYaw) : fabs(targetDir);
-        if (alignmentError > 1.2) vx *= 0.3;      // > 70度: 慢速转向
-        else if (alignmentError > 0.6) vx *= 0.7; // > 35度: 保持一定速度转向
-        // < 35度时保持 100% 速度冲刺
+        if (alignmentError > 1.2) vx *= 0.3;
+        else if (alignmentError > 0.6) vx *= 0.7;
         
-        // 5. 接触力增强:
+        // 5. 接触力增强 (区域自适应):
         if (isDribbling && alignmentError < 0.3) {
-            vx = vxLimit; // 冲刺！
+            vx = vxLimit * stabilityFactor;  // 对方场地也会降速
         }
 
-        // 6. 应急救球: 球漏到侧面时，强降速并大幅度修正机身
+        // 6. 应急救球:
         if (ballRange < 0.3 && fabs(ballYaw) > 1.0) {
             vx = -0.1; 
             vy = (ballYaw > 0 ? vyLimit : -vyLimit);
