@@ -21,11 +21,10 @@
                        <RobotFindBall vyaw_limit="1.5" />
                     </Sequence>
 
-                    <!-- 2. 高速直线带球模式：固定向前推进 -->
-                    <!-- kickDir=0 表示始终朝机器人正前方带球 -->
+                    <!-- 2. 纯相对带球模式：忽略场地坐标，视觉锁定球并向前推进 -->
                     <Sequence _while="ball_location_known">
-                       <Script code="kickDir:=0.0" />
-                       <Chase vx_limit="1.2" vy_limit="0.5" vtheta_limit="1.5" dist="0.05" safe_dist="0.3" />
+                       <Script code="kickDir:=ballYaw" /> <!-- 动态修正目标方向为球的方向 -->
+                       <Chase vx_limit="1.2" vy_limit="0.5" vtheta_limit="1.5" dist="0.0" safe_dist="0.0" />
                     </Sequence>
                </Sequence>
             </ReactiveSequence>
