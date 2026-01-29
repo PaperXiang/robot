@@ -338,13 +338,6 @@ NodeStatus Chase::tick()
     double oaSafeDist;
     brain->get_parameter("obstacle_avoidance.chase_ao_safe_dist", oaSafeDist);
 
-    if (
-        brain->config->limitNearBallSpeed
-        && brain->data->ball.range < brain->config->nearBallRange
-    ) {
-        vxLimit = min(brain->config->nearBallSpeedLimit, vxLimit);
-    }
-
     double ballRange = brain->data->ball.range;
     double ballYaw = brain->data->ball.yawToRobot;
     double kickDir = brain->data->kickDir;
@@ -355,6 +348,17 @@ NodeStatus Chase::tick()
     double theta_rb = brain->data->robotBallAngleToField;
     auto ballPos = brain->data->ball.posToField;
 
+    // --- 高速带球 4.0: 球速预测 ---
+    static Point lastBallPos = {0, 0, 0};
+    static rclcpp::Time lastBallTime;
+    double ballVelX = 0, ballVelY = 0;
+    double dt = brain->msecsSince(lastBallTime) / 1000.0;
+    if (dt > 0.01 && dt < 0.5) {
+        ballVelX = (brain->data->ball.posToRobot.x - lastBallPos.x) / dt;
+        ballVelY = (brain->data->ball.posToRobot.y - lastBallPos.y) / dt;
+    }
+    lastBallPos = brain->data->ball.posToRobot;
+    lastBallTime = brain->get_clock()->now();
 
     double vx, vy, vtheta;
     Pose2D target_f, target_r; 
@@ -362,7 +366,6 @@ NodeStatus Chase::tick()
     static double circleBackDir = 1.0; 
     double dirThreshold = M_PI / 2;
     if (targetType == "direct") dirThreshold *= 1.2;
-
 
     // 计算目标点
     if (fabs(toPInPI(kickDir - theta_rb)) < dirThreshold) {
@@ -386,6 +389,7 @@ NodeStatus Chase::tick()
             
     double targetDir = atan2(target_r.y, target_r.x);
     double distToObstacle = brain->distToObstacle(targetDir);
+    
     if (avoidObstacle && distToObstacle < oaSafeDist) {
         log("avoid obstacle");
         auto avoidDir = brain->calcAvoidDir(targetDir, oaSafeDist);
@@ -394,66 +398,73 @@ NodeStatus Chase::tick()
         vy = speed * sin(avoidDir);
         vtheta = ballYaw;
     } else {
-        // --- 高速带球核心算法 3.0 (Goal-Oriented Dribbling) ---
+        // --- 高速带球核心算法 4.0 (Predictive Goal-Oriented Dribbling) ---
         
-        // 1. 目标分析：区分寻球阶段和带球阶段
+        // 1. 阶段判断：寻球 vs 带球
         bool isCloseControl = (ballRange < 0.6);
+        bool isDribbling = (ballRange < 0.35);
         
-        // 2. 姿态控制 (Orientation Control) 优化：
-        // 如果离球近，优先面向球门方向 (kickDir)，而不是球本身，这样带球更顺畅
+        // 2. 姿态控制：带球时面向球门
         double angleToGoal = toPInPI(kickDir - brain->data->robotPoseToField.theta);
-        if (isCloseControl) {
-            vtheta = angleToGoal * 1.5; // 面向球门
+        if (isDribbling) {
+            vtheta = angleToGoal * 1.2;
+        } else if (isCloseControl) {
+            vtheta = (angleToGoal * 0.5 + ballYaw * 1.5);
         } else {
-            vtheta = targetDir * 2.5;  // 远距离奔向目标点
+            vtheta = targetDir * 2.5;
         }
         
-        // 3. 动态横向对齐 (Lateral Strafe) 优化：
-        // 增加横向稳定性，模拟"柔性导轨"，将球锁在双脚之间
-        double strafeGain = isCloseControl ? 3.0 : 1.5;
-        vy = cap(brain->data->ball.posToRobot.y * strafeGain, vyLimit, -vyLimit);
+        // 3. 横向磁吸增强：根据球速预测横向偏移
+        double predictedBallY = brain->data->ball.posToRobot.y + ballVelY * 0.15;
+        double strafeGain = isDribbling ? 4.0 : (isCloseControl ? 2.5 : 1.5);
+        vy = cap(predictedBallY * strafeGain, vyLimit, -vyLimit);
         
-        // 4. 前进速度 (Forward Velocity) 优化：
-        // 在对齐良好的情况下，允许加速到物理上限，实现高速突破
-        vx = max(0.4, min(vxLimit, ballRange));
+        // 4. 前进速度：带球时维持高速，仅在大角度偏差时减速
+        double baseSpeed = isDribbling ? vxLimit * 0.9 : max(0.5, min(vxLimit, ballRange));
         
-        // 5. 智能减速矩阵 (Adaptive Speed Matrix)
-        double alignmentError = isCloseControl ? fabs(brain->data->ball.yawToRobot) : fabs(targetDir);
+        // 5. 智能减速
+        double alignmentError = isDribbling ? fabs(ballYaw) : fabs(targetDir);
         double turnPenalty = 1.0;
+        if (alignmentError > 1.2) turnPenalty = 0.25;
+        else if (alignmentError > 0.6) turnPenalty = 0.6;
+        else if (alignmentError > 0.3) turnPenalty = 0.85;
         
-        if (alignmentError > 1.0) turnPenalty = 0.3;      // >60度: 急转减速
-        else if (alignmentError > 0.5) turnPenalty = 0.7; // >30度: 适度减速
-        else turnPenalty = 1.0;                           // <30度: 保持高速推进
-        
-        vx *= turnPenalty;
+        vx = baseSpeed * turnPenalty;
 
-        // 6. "穿透式"带球对齐 (Contact Persistence)
-        // 当球非常近时，目标点稍微向球内部重叠，防止因距离检测误差导致的"跟丢"
-        if (isCloseControl && alignmentError < 0.3) {
-            vx = min(vxLimit, vx + 0.1); 
+        // 6. 穿透式推进：确保持续接触球
+        if (isDribbling && alignmentError < 0.25) {
+            vx = vxLimit;
         }
 
-        // 7. 应急救球：防止球漏到身体侧后方
-        if (ballRange < 0.3 && fabs(ballYaw) > 1.0) {
-            vx = -0.1; // 稍微后退救球
-            vy = (ballYaw > 0 ? vyLimit : -vyLimit); 
-            vtheta = ballYaw * 2.0;
+        // 7. 球速补偿：如果球在远离，加速追赶
+        if (ballVelX > 0.2 && ballRange < 0.5) {
+            vx = min(vxLimit, vx + ballVelX * 0.5);
         }
+
+        // 8. 应急救球
+        if (ballRange < 0.25 && fabs(ballYaw) > 1.2) {
+            vx = -0.15;
+            vy = (ballYaw > 0 ? vyLimit : -vyLimit);
+            vtheta = ballYaw * 2.5;
+        }
+        
+        log(format("Dribble4.0: range=%.2f vx=%.2f vy=%.2f vt=%.2f err=%.2f", 
+                   ballRange, vx, vy, vtheta, alignmentError));
     }
 
     vx = cap(vx, vxLimit, -vxLimit);
     vy = cap(vy, vyLimit, -vyLimit);
     vtheta = cap(vtheta, vthetaLimit, -vthetaLimit);
 
-    // --- 动态自适应平滑 3.0 ---
+    // --- 动态自适应平滑 4.0 ---
     static double smoothVx = 0.0;
     static double smoothVy = 0.0;
     static double smoothVtheta = 0.0;
     
-    // 增加不同维度的权重分配：前进稳定，横移灵敏
-    double alphaVx = (ballRange < 0.4) ? 0.3 : 0.7;
-    double alphaVy = 0.8;      // 横向磁吸必须快
-    double alphaVtheta = 0.4;  // 转向平滑，防止机身晃动
+    // 带球时前进更稳定，横移更灵敏
+    double alphaVx = (ballRange < 0.35) ? 0.4 : 0.75;
+    double alphaVy = 0.85;
+    double alphaVtheta = 0.5;
 
     smoothVx = smoothVx * (1.0 - alphaVx) + vx * alphaVx;
     smoothVy = smoothVy * (1.0 - alphaVy) + vy * alphaVy;
