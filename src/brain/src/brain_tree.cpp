@@ -394,37 +394,71 @@ NodeStatus Chase::tick()
         vy = speed * sin(avoidDir);
         vtheta = ballYaw;
     } else {
-        vx = max(0.2, min(vxLimit, brain->data->ball.range));
-        vy = 0;
-        // 增加转向增益 P-controller: vtheta = error * Kp
-        // 之前是 1.0，现在改为 2.5，大幅提升对大角度偏差的响应速度
-        vtheta = targetDir * 2.5;
-        if (fabs(targetDir) < 0.1 && ballRange > 2.0) vtheta = 0.0;
+        // --- 高速带球核心算法 3.0 (Goal-Oriented Dribbling) ---
         
+        // 1. 目标分析：区分寻球阶段和带球阶段
+        bool isCloseControl = (ballRange < 0.6);
         
-        // 【转身策略优化】边走边转
-        // 允许机器人在转身时保持前进速度，形成弧线运动而非原地旋转
-        // vtheta < 0.5: 不减速 (100%)
-        // vtheta = 1.0: 减速到 75%
-        // vtheta >= 1.5: 保持 50% 速度
-        double turnPenalty = max(0.5, 1.0 - fabs(vtheta) * 0.33); 
+        // 2. 姿态控制 (Orientation Control) 优化：
+        // 如果离球近，优先面向球门方向 (kickDir)，而不是球本身，这样带球更顺畅
+        double angleToGoal = toPInPI(kickDir - brain->data->robotPoseToField.theta);
+        if (isCloseControl) {
+            vtheta = angleToGoal * 1.5; // 面向球门
+        } else {
+            vtheta = targetDir * 2.5;  // 远距离奔向目标点
+        }
+        
+        // 3. 动态横向对齐 (Lateral Strafe) 优化：
+        // 增加横向稳定性，模拟"柔性导轨"，将球锁在双脚之间
+        double strafeGain = isCloseControl ? 3.0 : 1.5;
+        vy = cap(brain->data->ball.posToRobot.y * strafeGain, vyLimit, -vyLimit);
+        
+        // 4. 前进速度 (Forward Velocity) 优化：
+        // 在对齐良好的情况下，允许加速到物理上限，实现高速突破
+        vx = max(0.4, min(vxLimit, ballRange));
+        
+        // 5. 智能减速矩阵 (Adaptive Speed Matrix)
+        double alignmentError = isCloseControl ? fabs(brain->data->ball.yawToRobot) : fabs(targetDir);
+        double turnPenalty = 1.0;
+        
+        if (alignmentError > 1.0) turnPenalty = 0.3;      // >60度: 急转减速
+        else if (alignmentError > 0.5) turnPenalty = 0.7; // >30度: 适度减速
+        else turnPenalty = 1.0;                           // <30度: 保持高速推进
+        
         vx *= turnPenalty;
 
+        // 6. "穿透式"带球对齐 (Contact Persistence)
+        // 当球非常近时，目标点稍微向球内部重叠，防止因距离检测误差导致的"跟丢"
+        if (isCloseControl && alignmentError < 0.3) {
+            vx = min(vxLimit, vx + 0.1); 
+        }
+
+        // 7. 应急救球：防止球漏到身体侧后方
+        if (ballRange < 0.3 && fabs(ballYaw) > 1.0) {
+            vx = -0.1; // 稍微后退救球
+            vy = (ballYaw > 0 ? vyLimit : -vyLimit); 
+            vtheta = ballYaw * 2.0;
+        }
     }
 
     vx = cap(vx, vxLimit, -vxLimit);
     vy = cap(vy, vyLimit, -vyLimit);
     vtheta = cap(vtheta, vthetaLimit, -vthetaLimit);
 
+    // --- 动态自适应平滑 3.0 ---
     static double smoothVx = 0.0;
     static double smoothVy = 0.0;
     static double smoothVtheta = 0.0;
-    // 调高新值的权重 (0.3 -> 0.5 -> 0.7) 以减少平滑带来的延迟，响应更灵敏
-    smoothVx = smoothVx * 0.7 + vx * 0.3;
-    smoothVy = smoothVy * 0.7 + vy * 0.3;
-    smoothVtheta = smoothVtheta * 0.3 + vtheta * 0.7; // 加大新值权重，减少滞后
+    
+    // 增加不同维度的权重分配：前进稳定，横移灵敏
+    double alphaVx = (ballRange < 0.4) ? 0.3 : 0.7;
+    double alphaVy = 0.8;      // 横向磁吸必须快
+    double alphaVtheta = 0.4;  // 转向平滑，防止机身晃动
 
-    // 启用平滑后的速度指令，避免加速度过大导致不稳定
+    smoothVx = smoothVx * (1.0 - alphaVx) + vx * alphaVx;
+    smoothVy = smoothVy * (1.0 - alphaVy) + vy * alphaVy;
+    smoothVtheta = smoothVtheta * (1.0 - alphaVtheta) + vtheta * alphaVtheta;
+
     brain->client->setVelocity(smoothVx, smoothVy, smoothVtheta, false, false, false);
     return NodeStatus::SUCCESS;
 }
