@@ -322,21 +322,26 @@ NodeStatus Chase::tick()
         vxLimit = min(brain->config->nearBallSpeedLimit, vxLimit);
     }
 
-    // Add ball position temporal smoothing to reduce over-adjustment
-    static Point smoothBallPosRobot = {0, 0, 0};
-    static bool firstRun = true;
-    const double ballAlpha = 0.5;  // Smoothing factor for ball position
+    // ====== 优化1: 球位置时间平滑滤波 ======
+    // 目的: 减少因球位置检测噪声导致的过度调整和抖动
+    // 方法: 使用指数加权移动平均(EWMA)对球的位置进行时间滤波
+    static Point smoothBallPosRobot = {0, 0, 0};  // 平滑后的球位置(机器人坐标系)
+    static bool firstRun = true;  // 首次运行标志
+    const double ballAlpha = 0.5;  // 平滑系数: 0.5表示新旧数据各占50%权重
     
     if (brain->data->ballDetected) {
         if (firstRun) {
+            // 首次检测到球时,直接使用当前位置初始化
             smoothBallPosRobot.x = brain->data->ball.posToRobot.x;
             smoothBallPosRobot.y = brain->data->ball.posToRobot.y;
             firstRun = false;
         } else {
+            // 后续帧使用指数平滑: smoothPos = (1-α)*oldPos + α*newPos
             smoothBallPosRobot.x = smoothBallPosRobot.x * (1-ballAlpha) + brain->data->ball.posToRobot.x * ballAlpha;
             smoothBallPosRobot.y = smoothBallPosRobot.y * (1-ballAlpha) + brain->data->ball.posToRobot.y * ballAlpha;
         }
     } else {
+        // 未检测到球时,使用原始位置(避免使用过时的平滑值)
         smoothBallPosRobot.x = brain->data->ball.posToRobot.x;
         smoothBallPosRobot.y = brain->data->ball.posToRobot.y;
     }
@@ -390,18 +395,23 @@ NodeStatus Chase::tick()
         vy = speed * sin(avoidDir);
         vtheta = ballYaw;
     } else {
-        // Improved turning while moving - allow simultaneous forward and turning motion
-        double baseSpeed =min(vxLimit, max(0.3, brain->data->ball.range * 0.8));
-        vx = baseSpeed * cos(targetDir);  // Reduce forward speed proportionally to angle
-        vy = baseSpeed * sin(targetDir);  // Allow sideways motion during turn
-        vtheta = targetDir * 0.8;  // Smoother angular velocity
+        // ====== 优化2: 边走边转 - 允许前进和转向同时进行 ======
+        // 目的: 避免原地转身,提高追球效率
+        // 方法: 将速度分解为目标方向的分量,实现平滑转向
+        double baseSpeed = min(vxLimit, max(0.3, brain->data->ball.range * 0.8));  // 基础速度,随距离调整
+        vx = baseSpeed * cos(targetDir);  // X方向速度 = 基础速度 * cos(角度)
+        vy = baseSpeed * sin(targetDir);  // Y方向速度 = 基础速度 * sin(角度)
+        vtheta = targetDir * 0.8;  // 角速度降低到80%,使转向更平滑
         
-        // Only reduce speed slightly at extreme angles instead of sigmoid penalty
+        // ====== 优化3: 移除sigmoid速度惩罚,仅在大角度转向时轻微降速 ======
+        // 原代码使用sigmoid函数在转向时大幅降速,导致追球过慢
+        // 新方法: 仅在转向角速度>0.5 rad/s时降低15%速度
         if (fabs(vtheta) > 0.5) {
-            vx *= 0.85;  // 15% reduction only when turning sharply
+            vx *= 0.85;  // 仅在急转弯时降速15%
             vy *= 0.85;
         }
         
+        // 当机器人基本对准目标且距离较远时,停止转向以保持稳定
         if (fabs(targetDir) < 0.1 && ballRange > 2.0) vtheta = 0.0;
     }
 
@@ -409,15 +419,20 @@ NodeStatus Chase::tick()
     vy = cap(vy, vyLimit, -vyLimit);
     vtheta = cap(vtheta, vthetaLimit, -vthetaLimit);
 
-    // Enable velocity smoothing for stability
-    static double smoothVx = 0.0;
-    static double smoothVy = 0.0;
-    static double smoothVtheta = 0.0;
-    const double alpha = 0.4;  // Increased for faster response while maintaining stability
+    // ====== 优化4: 启用速度平滑以提高稳定性 ======
+    // 目的: 减少速度突变导致的机器人晃动和不稳定
+    // 方法: 使用指数加权移动平均平滑速度指令
+    static double smoothVx = 0.0;      // 平滑后的X方向速度
+    static double smoothVy = 0.0;      // 平滑后的Y方向速度
+    static double smoothVtheta = 0.0;  // 平滑后的角速度
+    const double alpha = 0.4;  // 平滑系数: 0.4在响应速度和稳定性之间取得平衡
+    
+    // 指数平滑公式: smooth = (1-α)*old + α*new
     smoothVx = smoothVx * (1-alpha) + vx * alpha;
     smoothVy = smoothVy * (1-alpha) + vy * alpha;
     smoothVtheta = smoothVtheta * (1-alpha) + vtheta * alpha;
 
+    // 使用平滑后的速度发送给底层控制器
     brain->client->setVelocity(smoothVx, smoothVy, smoothVtheta, false, false, false);
     return NodeStatus::SUCCESS;
 }
@@ -788,19 +803,26 @@ NodeStatus Adjust::tick()
     vx = st * cos(thetat_r) + sr * cos(thetar_r); 
     vy = st * sin(thetat_r) + sr * sin(thetar_r); 
     vtheta = ballYaw;
-    // Reduce aggressive turning - cap vtheta_factor at 3.0
+    // ====== 优化5: 降低过于激进的转向 ======
+    // 原代码使用高转向系数(4.5)导致过度调整和振荡
+    // 优化: 将vtheta_factor限制在3.0以内,使转向更加平稳
     vtheta *= min(vtheta_factor, 3.0); 
 
     if (fabs(ballYaw) < NO_TURN_THRESHOLD) vtheta = 0.; 
     
-    // Smooth turning while moving - no hard stops, reduce speed smoothly based on angle
+    // ====== 优化6: 平滑转向 - 移除原地停止逻辑,实现真正的边走边转 ======
+    // 问题: 原代码在角度>0.8 rad(约46°)时强制停止(vx=0, vy=0),导致原地转身
+    // 优化: 根据角度平滑降低速度,但始终保持30%最低速度,从不完全停止
     if (fabs(ballYaw) > TURN_FIRST_THRESHOLD && fabs(deltaDir) < M_PI / 4) { 
-        double angleFactor = 1.0 - min(1.0, fabs(ballYaw) / (M_PI/2));  // 0 at 90°, 1 at 0°
-        vx *= max(0.3, angleFactor);  // Keep at least 30% speed instead of stopping
+        // 角度因子: 在0°时为1.0(全速),90°时为0(但会被限制到30%)
+        double angleFactor = 1.0 - min(1.0, fabs(ballYaw) / (M_PI/2));  
+        vx *= max(0.3, angleFactor);  // 保持30%最低速度,避免原地停止
         vy *= max(0.3, angleFactor);
     }
 
-    // Increase speed limits for faster adjustment
+    // ====== 优化7: 提高速度限制以允许更快的调整 ======
+    // 原代码使用非常低的限制(0.05),导致调整过慢
+    // 优化: 确保最低0.3/0.4的速度,如果配置的限制更高则使用配置值
     vx = cap(vx, max(vxLimit, 0.3), -0.);
     vy = cap(vy, max(vyLimit, 0.4), -max(vyLimit, 0.4));
     vtheta = cap(vtheta, vthetaLimit, -vthetaLimit);
