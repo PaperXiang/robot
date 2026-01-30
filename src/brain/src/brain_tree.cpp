@@ -39,6 +39,7 @@ void BrainTree::init()
     REGISTER_BUILDER(CamTrackBall)
     REGISTER_BUILDER(CamFindBall)
     REGISTER_BUILDER(CamFastScan)
+    REGISTER_BUILDER(CamLissajousScan)
     REGISTER_BUILDER(CamScanField)
     // REGISTER_BUILDER(SelfLocate)
     // REGISTER_BUILDER(SelfLocateEnterField)
@@ -1225,6 +1226,51 @@ NodeStatus CamFastScan::onRunning()
     _cmdIndex++;
     _timeLastCmd = brain->get_clock()->now();
     brain->client->moveHead(_cmdSequence[_cmdIndex][0], _cmdSequence[_cmdIndex][1]);
+    return NodeStatus::RUNNING;
+}
+
+// Lissajous曲线8字形扫描实现
+NodeStatus CamLissajousScan::onStart()
+{
+    _startTime = brain->get_clock()->now();
+    return NodeStatus::RUNNING;
+}
+
+NodeStatus CamLissajousScan::onRunning()
+{
+    // 获取参数
+    double cycleDuration = getInput<double>("cycle_duration_msec").value();
+    double pitchAmplitude = getInput<double>("pitch_amplitude").value();
+    double pitchCenter = getInput<double>("pitch_center").value();
+    double yawAmplitude = getInput<double>("yaw_amplitude").value();
+    double yawCenter = getInput<double>("yaw_center").value();
+    int frequencyRatio = getInput<int>("frequency_ratio").value();
+    
+    // 计算从开始到现在经过的时间
+    double elapsedMsec = brain->msecsSince(_startTime);
+    
+    // 如果超过一个周期，则完成扫描
+    if (elapsedMsec >= cycleDuration) {
+        return NodeStatus::SUCCESS;
+    }
+    
+    // 计算归一化时间 t ∈ [0, 2π]
+    double t = (elapsedMsec / cycleDuration) * 2.0 * M_PI;
+    
+    // Lissajous曲线参数方程：
+    // x(t) = A * sin(a*t)
+    // y(t) = B * sin(b*t + φ)
+    // 对于8字形，通常使用 a:b = 1:2 或 2:1，相位差 φ = π/2
+    
+    // 计算 pitch (上下方向) - 使用基础频率
+    double pitch = pitchCenter + pitchAmplitude * sin(t);
+    
+    // 计算 yaw (左右方向) - 使用 frequencyRatio 倍频率，相位差 π/2
+    double yaw = yawCenter + yawAmplitude * sin(frequencyRatio * t + M_PI / 2.0);
+    
+    // 发送头部控制命令
+    brain->client->moveHead(pitch, yaw);
+    
     return NodeStatus::RUNNING;
 }
 

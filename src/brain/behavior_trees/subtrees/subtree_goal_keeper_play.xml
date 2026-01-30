@@ -24,7 +24,7 @@
                <Sequence _while="!wait_for_opponent_kickoff" name="正常比赛">
                   <Sequence>
                      <SubTree ID="CamFindAndTrackBall" _autoremap="true" />
-                     <GoalieDecide decision_out="{decision}" decision_in="{decision}" chase_threshold="3.0"/>
+                     <GoalieDecide decision_out="{decision}" decision_in="{decision}" chase_threshold="1.8" max_chase_x="-3.5"/>
                      <GoToGoalBlockingPosition _while="decision=='find'" theta_tolerance="0.6" />
                      <GoToGoalBlockingPosition _while="decision == 'retreat'" theta_tolerance="0.6" />
                      <Chase   _while="decision == 'chase'"  vx_limit="0.8"  vy_limit="0.3"  vtheta_limit="1.0"  dist="0.1" safe_dist="0.5" />

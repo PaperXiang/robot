@@ -21,13 +21,22 @@ brain_node:
       ball_confidence_threshold: 50.0 
       ball_memory_timeout: 5.0 
       tm_ball_dist_threshold: 2.0 
-      limit_near_ball_speed: false 
-      near_ball_speed_limit: 0.2 
-      near_ball_range: 3.0
+      limit_near_ball_speed: true  # 启用近球速度限制，防止踢飞球
+      near_ball_speed_limit: 0.3  # 从0.2提升到0.3，不过度限制速度
+      near_ball_range: 1.5  # 从3.0降低到1.5米，范围更合理
       abort_kick_when_ball_moved: true 
       cooperation: 
         enable_role_switch: false 
-        ball_control_cost_threshold: 20.0 
+        ball_control_cost_threshold: 20.0
+      # 守门员策略参数
+      goalkeeper:
+        max_chase_x: -3.5  # 守门员最大追球X坐标（向对方球门方向），从-2.0扩大到-3.5
+        chase_threshold: 1.8  # 守门员追球距离阈值，从3.0降低到1.8防止离门太远
+      # 找球策略参数
+      find_ball:
+        scan_wait_msec: 300  # 扫描等待时间（从500ms降低，加快40%）
+        max_search_time: 15.0  # 最大搜索时间（从10s增加到15s，更充分）
+        fallback_wait_msec: 1000  # 找不到球的等待时间（从1500ms降低） 
 
     obstacle_avoidance:
       depth_sample_step: 16 
@@ -40,18 +49,18 @@ brain_node:
       ball_exclusion_radius: 0.0 
       ball_exclusion_height: 0.3 
       occupancy_threshold: 1 
-      collision_threshold: 0.3 
-      safe_distance: 2.0 
-      avoid_secs: 3.0 
+      collision_threshold: 0.25  # 从0.3降低到0.25，更早检测碰撞
+      safe_distance: 1.5  # 从2.0降低到1.5米，不过度保守
+      avoid_secs: 2.0  # 从3.0降低到2秒，提升灵活性
       enable_freekick_avoid: false 
       freekick_start_placing_safe_distance: 0.1 
       freekick_start_placing_avoid_secs: 2.5 
-      obstacle_memory_msecs: 500. 
+      obstacle_memory_msecs: 300  # 从500降低到300ms，更实时
       avoid_during_kick: false 
-      kick_ao_safe_dist: 3.0 
+      kick_ao_safe_dist: 2.0  # 从3.0降低到2.0，踢球更积极
       kick_ao_use_shoot: false 
       avoid_during_chase: true 
-      chase_ao_safe_dist: 3.5 
+      chase_ao_safe_dist: 2.5  # 从3.5降低到2.5，追球更积极 
 
     locator:
       min_marker_count: 5
@@ -68,7 +77,11 @@ brain_node:
       img_interval: 1 
     
     recovery:
-      retry_max_count: 2
+      retry_max_count: 3  # 从2增加到3次，提升站立成功率
+
+    # 性能优化参数
+    performance:
+      chase_smooth_factor: 0.4  # Chase速度平滑系数（从0.3提升，更灵敏）
 
     vision:
         image_topic: "/camera/camera/color/image_raw" 
@@ -76,7 +89,8 @@ brain_node:
         cam_pixel_width: 1280. 
         cam_pixel_height: 720. 
         cam_fov_x: 90.0 
-        cam_fov_y: 60.0 
+        cam_fov_y: 60.0
+        cache_validity_msec: 50  # 视觉缓存有效期（从100ms降低到50ms，更实时） 
     
     game_control_ip: "127.0.0.1"
 

@@ -22,7 +22,7 @@
                   <CalcKickDir />
                   <Sequence>
                      <ReactiveSequence>
-                        <StrikerDecide decision_out="{decision}" decision_in="{decision}" chase_threshold="1.5" />
+                        <StrikerDecide decision_out="{decision}" decision_in="{decision}" chase_threshold="2.0" hysteresis_factor="0.8" />
                         <SubTree ID="FindBall" _while="decision=='find'" _autoremap="true" />
                      </ReactiveSequence>
                         <Assist _while="decision == 'assist'" vx_limit = "0.2" vy_limit="0.2" />

@@ -210,6 +210,34 @@ private:
     Brain *brain;
 };
 
+// Lissajous曲线平滑8字形扫描
+class CamLissajousScan : public StatefulActionNode
+{
+public:
+    CamLissajousScan(const string &name, const NodeConfig &config, Brain *_brain) 
+        : StatefulActionNode(name, config), brain(_brain) {}
+
+    static PortsList providedPorts()
+    {
+        return {
+            InputPort<double>("cycle_duration_msec", 4000, "完成一个8字形扫描周期的时间(毫秒)"),
+            InputPort<double>("pitch_amplitude", 0.25, "俯仰角振幅(弧度)，控制上下范围"),
+            InputPort<double>("pitch_center", 0.65, "俯仰角中心位置(弧度)"),
+            InputPort<double>("yaw_amplitude", 1.0, "偏航角振幅(弧度)，控制左右范围"),
+            InputPort<double>("yaw_center", 0.0, "偏航角中心位置(弧度)"),
+            InputPort<int>("frequency_ratio", 2, "Lissajous频率比(默认2:1形成8字形)"),
+        };
+    }
+
+    NodeStatus onStart() override;
+    NodeStatus onRunning() override;
+    void onHalted() override {};
+
+private:
+    rclcpp::Time _startTime;    
+    Brain *brain;
+}
+
 class TurnOnSpot : public StatefulActionNode
 {
 public:

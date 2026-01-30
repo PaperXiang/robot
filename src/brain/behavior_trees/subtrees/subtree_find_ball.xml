@@ -5,16 +5,16 @@
      <Sequence name="root">
         <ReactiveSequence>
             <GoBackInField />
-            <CamFastScan />
+            <CamLissajousScan cycle_duration_msec="3000" pitch_amplitude="0.25" pitch_center="0.65" yaw_amplitude="1.0" />
         </ReactiveSequence>
         <TurnOnSpot rad="3.14"  towards_ball="true"/>
         <ReactiveSequence>
             <GoBackInField />
-            <CamFastScan />
+            <CamLissajousScan cycle_duration_msec="3000" pitch_amplitude="0.25" pitch_center="0.65" yaw_amplitude="1.0" />
         </ReactiveSequence>
         <ReactiveSequence>
           <GoToReadyPosition  vx_limit="0.7" />
-          <Sleep msec="5000" />
+          <Sleep msec="1000" />  <!-- 从5000ms降低到1000ms，加快节奏 -->
         </ReactiveSequence>
       </Sequence>
   </BehaviorTree>
