@@ -236,7 +236,7 @@ public:
 private:
     rclcpp::Time _startTime;    
     Brain *brain;
-}
+};
 
 class TurnOnSpot : public StatefulActionNode
 {
