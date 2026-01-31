@@ -29,14 +29,6 @@ brain_node:
         enable_role_switch: false 
         ball_control_cost_threshold: 20.0 
 
-    head_scan:
-      lissajous:
-        pitch_center: 0.7      # 中心俯仰角 (向下看)
-        pitch_amplitude: 0.35  # 俯仰角变化幅度
-        yaw_amplitude: 1.0     # 左右扫描幅度
-        cycle_msec: 3500       # 完整8字循环时间
-        frequency_ratio: 2.0   # Lissajous频率比 (2.0 = 8字形)
-
     obstacle_avoidance:
       depth_sample_step: 16 
       obstacle_min_height: 0.35 
