@@ -387,6 +387,11 @@ NodeStatus Chase::tick()
             
     double targetDir = atan2(target_r.y, target_r.x);
     double distToObstacle = brain->distToObstacle(targetDir);
+    
+    // ====== 修复: 计算与kickDir的角度差，同时转向目标方向 ======
+    double robotTheta = brain->data->robotPoseToField.theta;
+    double angleDiffToKickDir = toPInPI(kickDir - robotTheta);
+    
     if (avoidObstacle && distToObstacle < oaSafeDist) {
         log("avoid obstacle");
         auto avoidDir = brain->calcAvoidDir(targetDir, oaSafeDist);
@@ -401,7 +406,17 @@ NodeStatus Chase::tick()
         double baseSpeed = min(vxLimit, max(0.3, brain->data->ball.range * 0.8));  // 基础速度,随距离调整
         vx = baseSpeed * cos(targetDir);  // X方向速度 = 基础速度 * cos(角度)
         vy = baseSpeed * sin(targetDir);  // Y方向速度 = 基础速度 * sin(角度)
-        vtheta = targetDir * 0.8;  // 角速度降低到80%,使转向更平滑
+        
+        // ====== 关键修复: 同时转向kickDir，不只是转向球 ======
+        // 如果机器人离球较远且角度差大，边走边转向kickDir
+        if (ballRange > 0.5 && fabs(angleDiffToKickDir) > 0.3) {
+            // 混合targetDir和kickDir的转向
+            vtheta = targetDir * 0.5 + angleDiffToKickDir * 0.5;
+            log(format("chasing + turning to kickDir, angleDiff=%.2f", angleDiffToKickDir));
+        } else {
+            // 已接近球或已对准，仅转向目标点
+            vtheta = targetDir * 0.8;
+        }
         
         // ====== 优化3: 移除sigmoid速度惩罚,仅在大角度转向时轻微降速 ======
         // 原代码使用sigmoid函数在转向时大幅降速,导致追球过慢
