@@ -78,7 +78,7 @@ brain_node:
         cam_fov_x: 90.0 
         cam_fov_y: 60.0 
     
-    game_control_ip: "127.0.0.1"
+    game_control_ip: "192.168.241.21"
 
     # for fun and debug
     sound:
