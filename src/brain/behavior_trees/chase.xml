@@ -13,8 +13,8 @@
                      <Fallback>
                         <!-- 八字扫描 + 慢速身体旋转（并行执行） -->
                         <Parallel success_count="1">
-                           <CamLissajousScan yaw_amplitude="0.9" pitch_center="0.6" pitch_amplitude="0.35" cycle_msec="2500" />
-                           <RobotFindBall vyaw_limit="0.6" />
+                           <CamLissajousScan yaw_amplitude="1.2" pitch_center="0.5" pitch_amplitude="0.35" cycle_msec="2500" />
+                           <RobotFindBall vyaw_limit="0.8" />
                         </Parallel>
                      </Fallback>
                   </Sequence>
