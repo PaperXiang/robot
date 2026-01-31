@@ -1,5 +1,5 @@
 camera:
-  type: "realsense" # realsense, d-robotics, zed, zed_compressed, orbbec 根据相机的类型，选择对应的type
+  type: "orbbec" # realsense, d-robotics, zed, zed_compressed, orbbec 根据相机的类型，选择对应的type
   intrin:
     fx: 643.898
     fy: 643.216
