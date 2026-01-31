@@ -11,11 +11,11 @@
                   <Sequence _while="!ball_location_known" >
                      <PlaySound sound="search" />
                      <Fallback>
-                        <!-- 八字扫描 + 慢速身体旋转 -->
-                        <ReactiveSequence>
-                           <CamLissajousScan />
-                           <RobotFindBall vyaw_limit="0.8" />
-                        </ReactiveSequence>
+                        <!-- 八字扫描 + 慢速身体旋转（并行执行） -->
+                        <Parallel success_count="1">
+                           <CamLissajousScan yaw_amplitude="0.9" pitch_center="0.6" pitch_amplitude="0.35" cycle_msec="2500" />
+                           <RobotFindBall vyaw_limit="0.6" />
+                        </Parallel>
                      </Fallback>
                   </Sequence>
                   <Sequence _while="ball_location_known" >

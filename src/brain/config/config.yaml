@@ -32,9 +32,9 @@ brain_node:
     head_scan:
       lissajous:
         pitch_center: 0.7      # 中心俯仰角 (向下看)
-        pitch_amplitude: 0.25  # 俯仰角变化幅度
+        pitch_amplitude: 0.35  # 俯仰角变化幅度
         yaw_amplitude: 1.0     # 左右扫描幅度
-        cycle_msec: 3000       # 完整8字循环时间
+        cycle_msec: 3500       # 完整8字循环时间
         frequency_ratio: 2.0   # Lissajous频率比 (2.0 = 8字形)
 
     obstacle_avoidance:
