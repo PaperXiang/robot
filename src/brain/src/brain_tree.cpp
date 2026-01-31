@@ -797,26 +797,37 @@ NodeStatus Adjust::tick()
     }
 
     double theta_robot_f = brain->data->robotPoseToField.theta; 
-    double thetat_r = dir_rb_f + M_PI / 2 * (deltaDir > 0 ? -1.0 : 1.0) - theta_robot_f; 
+    // ====== 修复: 直接朝向kickDir调整，不再绕球转圈 ======
+    // 旧逻辑: 绕球转90度调整角度 (导致过度转向)
+    // 新逻辑: 直接朝向踢球方向小幅度调整
+    double targetTheta_f = kickDir;  // 目标朝向（场地坐标系）
+    double angleDiffToTarget = toPInPI(targetTheta_f - theta_robot_f);  // 与目标的角度差
+    
+    // 计算径向速度（靠近/远离球）
     double thetar_r = dir_rb_f - theta_robot_f; 
-
-    vx = st * cos(thetat_r) + sr * cos(thetar_r); 
-    vy = st * sin(thetat_r) + sr * sin(thetar_r); 
-    vtheta = ballYaw;
-    // ====== 优化5: 降低过于激进的转向 ======
-    // 原代码使用高转向系数(4.5)导致过度调整和振荡
-    // 优化: 将vtheta_factor限制在3.0以内,使转向更加平稳
-    vtheta *= min(vtheta_factor, 3.0); 
+    vx = sr * cos(thetar_r); 
+    vy = sr * sin(thetar_r); 
+    
+    // 转向速度：直接朝目标方向，不再转90度
+    vtheta = angleDiffToTarget;
+    
+    // ====== 优化: 降低转向系数防止过冲 ======
+    // 从3.0降到2.0，使转向更平稳
+    vtheta *= min(vtheta_factor, 2.0); 
+    
+    // 如果已经较对准（<17度），减半转速避免过冲
+    if (fabs(deltaDir) < 0.3) {
+        vtheta *= 0.5;
+        log("near target angle, damping rotation");
+    }
 
     if (fabs(ballYaw) < NO_TURN_THRESHOLD) vtheta = 0.; 
     
-    // ====== 优化6: 平滑转向 - 移除原地停止逻辑,实现真正的边走边转 ======
-    // 问题: 原代码在角度>0.8 rad(约46°)时强制停止(vx=0, vy=0),导致原地转身
-    // 优化: 根据角度平滑降低速度,但始终保持30%最低速度,从不完全停止
-    if (fabs(ballYaw) > TURN_FIRST_THRESHOLD && fabs(deltaDir) < M_PI / 4) { 
-        // 角度因子: 在0°时为1.0(全速),90°时为0(但会被限制到30%)
+    // ====== 优化: 大角度转向时降速但不停止 ======
+    // 降低阈值从0.8到0.5 rad (从46°到29°)
+    if (fabs(ballYaw) > max(TURN_FIRST_THRESHOLD, 0.5) && fabs(deltaDir) < M_PI / 4) { 
         double angleFactor = 1.0 - min(1.0, fabs(ballYaw) / (M_PI/2));  
-        vx *= max(0.3, angleFactor);  // 保持30%最低速度,避免原地停止
+        vx *= max(0.3, angleFactor);  
         vy *= max(0.3, angleFactor);
     }
 
