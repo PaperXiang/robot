@@ -1283,6 +1283,25 @@ NodeStatus CamFastScan::onRunning()
 NodeStatus CamLissajousScan::onStart()
 {
     _startTime = brain->get_clock()->now();
+    
+    // Calculate initial phase from current head yaw to avoid sudden jumps
+    // 从当前头部yaw位置平滑开始，避免球丢失后突然反向转动
+    double currentYaw = brain->data->headYaw;
+    double yawAmplitude;
+    getInput("yaw_amplitude", yawAmplitude);
+    
+    // Calculate the phase that corresponds to current yaw
+    // yaw = yawAmplitude * sin(t), so t = asin(yaw / yawAmplitude)
+    // Use atan2 for robustness and to handle all quadrants
+    double normalizedYaw = std::max(-1.0, std::min(1.0, currentYaw / yawAmplitude));
+    _phaseOffset = std::asin(normalizedYaw);
+    
+    // If current yaw is in the "returning" phase, adjust offset
+    // This ensures we start in the direction closest to current position
+    if (std::abs(currentYaw) > yawAmplitude * 0.7) {
+        _phaseOffset = M_PI - _phaseOffset;
+    }
+    
     return NodeStatus::RUNNING;
 }
 
@@ -1296,9 +1315,9 @@ NodeStatus CamLissajousScan::onRunning()
     getInput("cycle_msec", cycleMsec);
     getInput("frequency_ratio", freqRatio);
     
-    // Calculate elapsed time in seconds
+    // Calculate elapsed time in seconds with phase offset
     auto elapsed = brain->msecsSince(_startTime);
-    double t = (elapsed / cycleMsec) * 2.0 * M_PI;  // Normalize to [0, 2π]
+    double t = (elapsed / cycleMsec) * 2.0 * M_PI + _phaseOffset;  // Add phase offset for smooth start
     
     // Lissajous curve parametric equations for figure-8
     // x(t) = A * sin(a*t + δ)

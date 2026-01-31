@@ -220,11 +220,11 @@ public:
     static PortsList providedPorts()
     {
         return {
-            InputPort<double>("pitch_center", 0.7, "中心俯仰角"),
-            InputPort<double>("pitch_amplitude", 0.25, "俯仰角幅度"),
-            InputPort<double>("yaw_amplitude", 1.0, "偏航角幅度"),
-            InputPort<double>("cycle_msec", 4000, "完整8字循环时间(毫秒)"),
-            InputPort<double>("frequency_ratio", 2.0, "Lissajous频率比(默认2.0产生8字形)"),
+            InputPort<double>("pitch_center", 0.45, "中心俯仰角（抬高头部视野）"),
+            InputPort<double>("pitch_amplitude", 0.4, "俯仰角幅度（上下扫描范围）"),
+            InputPort<double>("yaw_amplitude", 1.57, "偏航角幅度（±90度，配合身体旋转覆盖360度）"),
+            InputPort<double>("cycle_msec", 1500, "完整8字循环时间(1.5秒)，快速扫描"),
+            InputPort<double>("frequency_ratio", 2.0, "Lissajous频率比(2.0产生8字形)"),
         };
     }
 
@@ -235,7 +235,8 @@ public:
     void onHalted() override {};
 
 private:
-    rclcpp::Time _startTime;    
+    rclcpp::Time _startTime;
+    double _phaseOffset = 0.0;  // Phase offset for smooth start from current head position
     Brain *brain;
 };
 

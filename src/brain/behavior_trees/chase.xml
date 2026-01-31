@@ -11,11 +11,16 @@
                   <Sequence _while="!ball_location_known" >
                      <PlaySound sound="search" />
                      <Fallback>
-                        <!-- 阶段1: 转身360° + 相机八字扫描 -->
+                        <!-- 八字扫描 + 慢速身体旋转 -->
                         <ReactiveSequence>
-                           <CamFindBall />
-                           <TurnOnSpot rad="6.28" towards_ball="false" />
+                           <CamLissajousScan />
+                           <RobotFindBall vyaw_limit="0.8" />
                         </ReactiveSequence>
+                        <!-- 阶段2: 返回Ready位置 -->
+                        <Sequence>
+                           <GoToReadyPosition vx_limit="0.7" />
+                           <Sleep msec="2000" />
+                        </Sequence>
                      </Fallback>
                   </Sequence>
                   <Sequence _while="ball_location_known" >
