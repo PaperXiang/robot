@@ -3,19 +3,19 @@
 <root BTCPP_format="4" >
   <BehaviorTree ID="FindBall">
      <Sequence name="root">
-         <ReactiveSequence>
-            <GoBackInField />
-            <CamLissajousScan />
-        </ReactiveSequence>
-        <TurnOnSpot rad="3.14"  towards_ball="true"/>
-        <ReactiveSequence>
-            <GoBackInField />
-            <CamLissajousScan />
-        </ReactiveSequence>
-        <ReactiveSequence>
-          <GoToReadyPosition  vx_limit="0.7" />
-          <Sleep msec="5000" />
-        </ReactiveSequence>
+        <Fallback>
+           <!-- 八字扫描 + 慢速身体旋转 -->
+           <ReactiveSequence>
+              <GoBackInField />
+              <CamLissajousScan />
+              <RobotFindBall vyaw_limit="0.8" />
+           </ReactiveSequence>
+           <!-- 返回Ready位置 -->
+           <ReactiveSequence>
+              <GoToReadyPosition vx_limit="0.7" />
+              <Sleep msec="2000" />
+           </ReactiveSequence>
+        </Fallback>
       </Sequence>
   </BehaviorTree>
 </root>
