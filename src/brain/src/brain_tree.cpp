@@ -797,7 +797,6 @@ NodeStatus Adjust::tick()
     double vx = 0, vy = 0, vtheta = 0;
     double kickDir = brain->data->kickDir;
     double dir_rb_f = brain->data->robotBallAngleToField; 
-    double deltaDir = toPInPI(kickDir - dir_rb_f);
     double ballRange = brain->data->ball.range;
     double ballYaw = brain->data->ball.yawToRobot;
     // double st = cap(fabs(deltaDir), st_far, st_near);
@@ -807,12 +806,11 @@ NodeStatus Adjust::tick()
     double sr = cap(R - r, 0.5, 0); 
     log(format("R: %.2f, r: %.2f, sr: %.2f", R, r, sr));
 
-    log(format("deltaDir = %.1f", deltaDir));
-    if (fabs(deltaDir) * R < NEAR_THRESHOLD) {
+    // 计算目标方向差（用于判断是否使用近距离速度）
+    double tempDeltaDir = toPInPI(toPInPI(kickDir + M_PI) - dir_rb_f);
+    if (fabs(tempDeltaDir) * R < NEAR_THRESHOLD) {
         log("use near speed");
         st = st_near;
-        // sr = 0.;
-        // vxLimit = 0.1;
     }
 
     double theta_robot_f = brain->data->robotPoseToField.theta; 
