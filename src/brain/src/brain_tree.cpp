@@ -468,9 +468,13 @@ NodeStatus SimpleChase::tick()
 
     double vx = brain->data->ball.posToRobot.x;
     double vy = brain->data->ball.posToRobot.y;
-    double vtheta = brain->data->ball.yawToRobot * 4.0; 
+    double vtheta = brain->data->ball.yawToRobot * 6.0;  // 提高从4.0到6.0，转向更迅速 
+ 
 
-    double linearFactor = 1 / (1 + exp(3 * (brain->data->ball.range * fabs(brain->data->ball.yawToRobot)) - 3)); 
+    // 优化速度衰减函数：降低sigmoid强度，允许在大角度时保持更高速度
+    // 原公式: exp(3*(range*yaw)-3) 衰减过激进
+    // 新公式: exp(2*(range*yaw)-4) 更温和，提高速度
+    double linearFactor = 1 / (1 + exp(2 * (brain->data->ball.range * fabs(brain->data->ball.yawToRobot)) - 4)); 
     vx *= linearFactor;
     vy *= linearFactor;
 

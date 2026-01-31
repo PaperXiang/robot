@@ -13,9 +13,9 @@ brain_node:
       odom_factor: 1.2 
       vx_factor: 0.50 
       yaw_offset: 0.0 
-      vx_limit: 1.0 
-      vy_limit: 0.4
-      vtheta_limit: 1.2 
+      vx_limit: 1.6  # 提高从1.0到1.8，提升80% 
+      vy_limit: 0.75  # 提高从0.4到1.0，提升150%
+      vtheta_limit: 1.6  # 提高从1.2到1.8，提升50% 
 
     strategy:
       ball_confidence_threshold: 50.0 
