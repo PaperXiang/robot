@@ -18,7 +18,7 @@ brain_node:
       vtheta_limit: 1.2 
 
     strategy:
-      ball_confidence_threshold: 65.0 
+      ball_confidence_threshold: 50.0 
       ball_memory_timeout: 1.0 
       tm_ball_dist_threshold: 2.0 
       limit_near_ball_speed: false 
@@ -60,9 +60,9 @@ brain_node:
     enable_com: false 
 
     rerunLog:
-      enable_tcp: false 
-      server_ip: "127.0.0.1:9876" 
-      enable_file: false 
+      enable_tcp: true 
+      server_ip: "192.168.241.135:9876" 
+      enable_file: true 
       log_dir: "/home/booster/Workspace/rrlog"
       max_log_file_mins: 5.0 
       img_interval: 1 
