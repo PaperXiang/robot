@@ -353,6 +353,13 @@ private:
     double _speed; 
     double _minRange; 
     tuple<double, double, double> _calcSpeed();
+    
+    /**
+     * @brief 根据目标距离计算最优踢球速度
+     * @param targetDistance 球到目标的距离（米）
+     * @return 建议的踢球速度（m/s）
+     */
+    double calculateKickSpeed(double targetDistance);
 };
 
 

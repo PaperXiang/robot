@@ -1073,10 +1073,29 @@ tuple<double, double, double> Kick::_calcSpeed() {
     return make_tuple(vx, vy, msecKick);
 }
 
+double Kick::calculateKickSpeed(double targetDistance) {
+    // 根据目标距离计算最优踢球速度
+    double speed;
+    
+    if (targetDistance < 1.5) {
+        // 短距离: 轻踢
+        speed = 0.3 + targetDistance * 0.1;
+    } else if (targetDistance < 4.0) {
+        // 中距离
+        speed = 0.45 + (targetDistance - 1.5) * 0.1;
+    } else {
+       // 长距离
+        speed = min(0.8, 0.7 + (targetDistance - 4.0) * 0.05);
+    }
+    
+    double speedLimit = getInput<double>("speed_limit").value();
+    return min(speed, speedLimit);
+}
+
 NodeStatus Kick::onStart()
 {
     _minRange = brain->data->ball.range;
-    _speed = 0.5;
+    _speed = calculateKickSpeed(brain->data->ball.range);
     _startTime = brain->get_clock()->now();
 
 
