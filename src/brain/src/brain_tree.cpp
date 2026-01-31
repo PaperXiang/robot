@@ -824,7 +824,7 @@ NodeStatus Adjust::tick()
     double deltaDir = toPInPI(targetDir - dir_rb_f);  // 与目标位置的角度差
     
     // 判断是否已经到达正确位置
-    bool positionGood = fabs(deltaDir) < 0.2;  // 位置偏差 < 11度
+    bool positionGood = fabs(deltaDir) < 0.35;  // 位置偏差 < 20度（放宽以减少过度调整）
     
     // 1. 计算径向速度（靠近/远离球）
     double thetar_r = dir_rb_f - theta_robot_f; 
@@ -1024,15 +1024,13 @@ NodeStatus StrikerDecide::tick() {
         color = 0x00FF00FF;
         brain->data->isFreekickKickingOff = false; 
     }
-    else if (fabs(deltaDir) < 0.25)  // 放宽条件：角度差 < 15度时也可以踢球
+    else if (fabs(deltaDir) < 0.4 && ball.range < 1.2)  // 进一步放宽：角度差 < 23度 且距离 < 1.2米
     {
-        if (brain->data->ballDetected 
-            && ball.range < 1.0  // 必须比较近
-            && fabs(ballYaw) < 0.5)  // 球在前方
+        if (brain->data->ballDetected && fabs(ballYaw) < 0.6)  // 球在前方
         {
             newDecision = "kick";
             color = 0x00FF00FF;
-            log("角度接近，直接踢球");
+            log("位置足够好，直接踢球");
         } else {
             newDecision = "adjust";
             color = 0xFFFF00FF;
@@ -1045,6 +1043,10 @@ NodeStatus StrikerDecide::tick() {
     }
 
     setOutput("decision_out", newDecision);
+    
+    // 增强日志输出
+    log(format("Decision: %s | deltaDir: %.2f (%.0f°) | ballRange: %.2f | ballYaw: %.2f | angleGood: %d | reachedKickDir: %d",
+        newDecision.c_str(), deltaDir, deltaDir * 57.3, ballRange, ballYaw, angleGoodForKick, reachedKickDir));
     brain->log->logToScreen(
         "tree/Decide",
         format(
