@@ -16,11 +16,6 @@
                            <CamLissajousScan />
                            <RobotFindBall vyaw_limit="0.8" />
                         </ReactiveSequence>
-                        <!-- 阶段2: 返回Ready位置 -->
-                        <Sequence>
-                           <GoToReadyPosition vx_limit="0.7" />
-                           <Sleep msec="2000" />
-                        </Sequence>
                      </Fallback>
                   </Sequence>
                   <Sequence _while="ball_location_known" >
