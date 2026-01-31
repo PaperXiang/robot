@@ -3,14 +3,19 @@
 <root BTCPP_format="4" >
   <BehaviorTree ID="FindBall">
      <Sequence name="root">
-        <Fallback>
-           <!-- 阶段1: 转身360° + 八字扫描 -->
-           <ReactiveSequence>
-              <GoBackInField />
-              <CamLissajousScan />
-              <TurnOnSpot rad="6.28" towards_ball="false" />
-           </ReactiveSequence>
-        </Fallback>
+         <ReactiveSequence>
+            <GoBackInField />
+            <CamLissajousScan />
+        </ReactiveSequence>
+        <TurnOnSpot rad="3.14"  towards_ball="true"/>
+        <ReactiveSequence>
+            <GoBackInField />
+            <CamLissajousScan />
+        </ReactiveSequence>
+        <ReactiveSequence>
+          <GoToReadyPosition  vx_limit="0.7" />
+          <Sleep msec="5000" />
+        </ReactiveSequence>
       </Sequence>
   </BehaviorTree>
 </root>

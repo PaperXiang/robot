@@ -11,10 +11,10 @@
                   <Sequence _while="!ball_location_known" >
                      <PlaySound sound="search" />
                      <Fallback>
-                        <!-- 阶段1: 转身360° + 相机八字扫描 -->
+                        <!-- 阶段1: 转身180° + 利萨茹八字扫描 -->
                         <ReactiveSequence>
-                           <CamFindBall />
-                           <TurnOnSpot rad="6.28" towards_ball="false" />
+                           <CamLissajousScan />
+                           <TurnOnSpot rad="3.14" towards_ball="false" />
                         </ReactiveSequence>
                      </Fallback>
                   </Sequence>
