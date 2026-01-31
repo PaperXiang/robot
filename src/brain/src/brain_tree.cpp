@@ -815,52 +815,72 @@ NodeStatus Adjust::tick()
 
     double theta_robot_f = brain->data->robotPoseToField.theta; 
     
-    // ====== 正确的调整逻辑 ======
-    // 关键理解：dir_rb_f 是"机器人→球"的方向
-    // 目标：
-    // 1. 位置：让 dir_rb_f = kickDir + π（在球的后方，远离球门一侧）
-    // 2. 朝向：让 theta_robot_f = kickDir（身体朝向球门）
-    // 3. 方法：绕球移动调整位置 + 转向球门
+    // ====== 两阶段调整逻辑 ======
+    // 阶段1：移动到球后方（朝向目标位置移动）
+    // 阶段2：转向球门方向
     
     // 计算目标位置：球的后方
     double targetDir = toPInPI(kickDir + M_PI);  // 球门的反方向
-    double deltaDir = toPInPI(targetDir - dir_rb_f);  // 需要调整的角度
+    double deltaDir = toPInPI(targetDir - dir_rb_f);  // 与目标位置的角度差
+    
+    // 判断是否已经到达正确位置
+    bool positionGood = fabs(deltaDir) < 0.2;  // 位置偏差 < 11度
     
     // 1. 计算径向速度（靠近/远离球）
     double thetar_r = dir_rb_f - theta_robot_f; 
     vx = sr * cos(thetar_r); 
     vy = sr * sin(thetar_r); 
     
-    // 2. 计算切向速度（绕球移动到正确位置）
-    //    deltaDir > 0: 需要逆时针绕球移动
-    //    deltaDir < 0: 需要顺时针绕球移动
-    double thetat_r = thetar_r + M_PI / 2;  // 逆时针切线方向
-    double tangential_speed = st * deltaDir;  // 根据角度差确定绕球速度和方向
-    
-    vx += tangential_speed * cos(thetat_r);
-    vy += tangential_speed * sin(thetat_r);
-    
-    // 3. 计算转向速度（让机器人朝向球门！）
-    //    机器人应该朝向球门(kickDir)
-    vtheta = toPInPI(kickDir - theta_robot_f);
-    vtheta *= vtheta_factor;
-    
-    // 如果已经较对准目标位置，减小绕球速度
-    if (fabs(deltaDir) < 0.3) {
-        vx *= 0.7;
-        vy *= 0.7;
-        vtheta *= 0.7;
-        log("接近目标位置，减速");
+    if (!positionGood) {
+        // ====== 阶段1：移动到球后方 ======
+        // 计算切向速度（绕球移动到正确位置）
+        double thetat_r = thetar_r + M_PI / 2;  // 切线方向
+        double tangential_speed = st * deltaDir;  // 根据角度差确定绕球速度
+        
+        vx += tangential_speed * cos(thetat_r);
+        vy += tangential_speed * sin(thetat_r);
+        
+        // 转向目标位置方向（球后方），而不是球门！
+        // 这样机器人会正面移动到目标位置，而不是侧身
+        vtheta = toPInPI(targetDir - theta_robot_f);
+        vtheta *= vtheta_factor;
+        
+        // 接近目标位置时减速
+        if (fabs(deltaDir) < 0.5) {
+            vx *= 0.6;
+            vy *= 0.6;
+            vtheta *= 0.6;
+        }
+        
+        log("移动到球后方");
+    } else {
+        // ====== 阶段2：已在正确位置，转向球门 ======
+        // 减小径向和切向速度，专注转向
+        vx *= 0.3;
+        vy *= 0.3;
+        
+        // 转向球门方向
+        vtheta = toPInPI(kickDir - theta_robot_f);
+        vtheta *= vtheta_factor * 0.8;  // 稍微降低转速，避免过冲
+        
+        // 如果朝向也接近正确，极度减速准备踢球
+        if (fabs(kickDir - theta_robot_f) < 0.15) {
+            vx *= 0.1;
+            vy *= 0.1;
+            vtheta *= 0.5;
+            log("准备踢球");
+        } else {
+            log("转向球门");
+        }
     }
 
-    // 如果球不在前方，优先转向
+    // 如果球不在前方，优先转向球
     if (fabs(ballYaw) < NO_TURN_THRESHOLD) {
         vtheta = 0.;  // 球在正前方，不转
     } else if (fabs(ballYaw) > TURN_FIRST_THRESHOLD) { 
-        // 球不在前方，减慢平移，专注转向球门方向
         vx *= 0.3;  
         vy *= 0.3;
-        log("转向球门方向");
+        log("球不在视野，转向球");
     }
 
     // 速度限制
@@ -868,8 +888,8 @@ NodeStatus Adjust::tick()
     vy = cap(vy, vyLimit, -vyLimit);
     vtheta = cap(vtheta, vthetaLimit, -vthetaLimit);
     
-    log(format("targetDir: %.2f deltaDir: %.2f ballYaw: %.2f vx: %.2f vy: %.2f vtheta: %.2f", 
-        targetDir, deltaDir, ballYaw, vx, vy, vtheta));
+    log(format("posGood: %d deltaDir: %.2f theta_diff: %.2f vx: %.2f vy: %.2f vtheta: %.2f", 
+        positionGood, deltaDir, kickDir - theta_robot_f, vx, vy, vtheta));
     brain->client->setVelocity(vx, vy, vtheta);
     return NodeStatus::SUCCESS;
 }
@@ -1003,6 +1023,20 @@ NodeStatus StrikerDecide::tick() {
         else newDecision = "kick";      
         color = 0x00FF00FF;
         brain->data->isFreekickKickingOff = false; 
+    }
+    else if (fabs(deltaDir) < 0.25)  // 放宽条件：角度差 < 15度时也可以踢球
+    {
+        if (brain->data->ballDetected 
+            && ball.range < 1.0  // 必须比较近
+            && fabs(ballYaw) < 0.5)  // 球在前方
+        {
+            newDecision = "kick";
+            color = 0x00FF00FF;
+            log("角度接近，直接踢球");
+        } else {
+            newDecision = "adjust";
+            color = 0xFFFF00FF;
+        }
     }
     else
     {
