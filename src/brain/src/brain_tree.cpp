@@ -816,48 +816,58 @@ NodeStatus Adjust::tick()
     }
 
     double theta_robot_f = brain->data->robotPoseToField.theta; 
-    // ====== 修复: 直接朝向kickDir调整，不再绕球转圈 ======
-    // 旧逻辑: 绕球转90度调整角度 (导致过度转向)
-    // 新逻辑: 直接朝向踢球方向小幅度调整
-    double targetTheta_f = kickDir;  // 目标朝向（场地坐标系）
-    double angleDiffToTarget = toPInPI(targetTheta_f - theta_robot_f);  // 与目标的角度差
     
-    // 计算径向速度（靠近/远离球）
+    // ====== 正确的调整逻辑 ======
+    // 目标：
+    // 1. 位置：让 dir_rb_f = kickDir（在球门-球延长线上，球的后方）
+    // 2. 朝向：让 theta_robot_f = kickDir（身体朝向球门，不是朝向球！）
+    // 3. 方法：绕球移动调整位置 + 转向球门
+    
+    // 1. 计算径向速度（靠近/远离球）
     double thetar_r = dir_rb_f - theta_robot_f; 
     vx = sr * cos(thetar_r); 
     vy = sr * sin(thetar_r); 
     
-    // 转向速度：直接朝目标方向，不再转90度
-    vtheta = angleDiffToTarget;
+    // 2. 计算切向速度（绕球移动到正确位置）
+    //    切向方向 = 径向方向转90度
+    //    deltaDir > 0: 需要逆时针绕球移动
+    //    deltaDir < 0: 需要顺时针绕球移动
+    double thetat_r = thetar_r + M_PI / 2;  // 逆时针切线方向
+    double tangential_speed = st * deltaDir;  // 根据角度差确定绕球速度和方向
     
-    // ====== 优化: 降低转向系数防止过冲 ======
-    // 从3.0降到2.0，使转向更平稳
-    vtheta *= min(vtheta_factor, 2.0); 
+    vx += tangential_speed * cos(thetat_r);
+    vy += tangential_speed * sin(thetat_r);
     
-    // 如果已经较对准（<17度），减半转速避免过冲
+    // 3. 计算转向速度（让机器人朝向球门！）
+    //    ⭐ 关键：机器人应该朝向球门(kickDir)，不是朝向球！
+    //    这样机器人可以直接向前冲踢球入门
+    vtheta = toPInPI(kickDir - theta_robot_f);
+    vtheta *= vtheta_factor;
+    
+    // 如果已经较对准球门方向，减小绕球速度
     if (fabs(deltaDir) < 0.3) {
-        vtheta *= 0.5;
-        log("near target angle, damping rotation");
+        vx *= 0.7;
+        vy *= 0.7;
+        vtheta *= 0.7;
+        log("接近目标位置，减速");
     }
 
-    if (fabs(ballYaw) < NO_TURN_THRESHOLD) vtheta = 0.; 
-    
-    // ====== 优化: 大角度转向时降速但不停止 ======
-    // 降低阈值从0.8到0.5 rad (从46°到29°)
-    if (fabs(ballYaw) > max(TURN_FIRST_THRESHOLD, 0.5) && fabs(deltaDir) < M_PI / 4) { 
-        double angleFactor = 1.0 - min(1.0, fabs(ballYaw) / (M_PI/2));  
-        vx *= max(0.3, angleFactor);  
-        vy *= max(0.3, angleFactor);
+    // 如果球不在前方，优先转向
+    if (fabs(ballYaw) < NO_TURN_THRESHOLD) {
+        vtheta = 0.;  // 球在正前方，不转
+    } else if (fabs(ballYaw) > TURN_FIRST_THRESHOLD) { 
+        // 球不在前方，减慢平移，专注转向球门方向
+        vx *= 0.3;  
+        vy *= 0.3;
+        log("转向球门方向");
     }
 
-    // ====== 优化7: 提高速度限制以允许更快的调整 ======
-    // 原代码使用非常低的限制(0.05),导致调整过慢
-    // 优化: 确保最低0.3/0.4的速度,如果配置的限制更高则使用配置值
-    vx = cap(vx, max(vxLimit, 0.3), -0.);
-    vy = cap(vy, max(vyLimit, 0.4), -max(vyLimit, 0.4));
+    // 速度限制
+    vx = cap(vx, vxLimit, -vxLimit);
+    vy = cap(vy, vyLimit, -vyLimit);
     vtheta = cap(vtheta, vthetaLimit, -vthetaLimit);
     
-    log(format("vx: %.1f vy: %.1f vtheta: %.1f", vx, vy, vtheta));
+    log(format("deltaDir: %.2f ballYaw: %.2f vx: %.2f vy: %.2f vtheta: %.2f", deltaDir, ballYaw, vx, vy, vtheta));
     brain->client->setVelocity(vx, vy, vtheta);
     return NodeStatus::SUCCESS;
 }
