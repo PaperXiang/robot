@@ -818,10 +818,15 @@ NodeStatus Adjust::tick()
     double theta_robot_f = brain->data->robotPoseToField.theta; 
     
     // ====== 正确的调整逻辑 ======
+    // 关键理解：dir_rb_f 是"机器人→球"的方向
     // 目标：
-    // 1. 位置：让 dir_rb_f = kickDir（在球门-球延长线上，球的后方）
-    // 2. 朝向：让 theta_robot_f = kickDir（身体朝向球门，不是朝向球！）
+    // 1. 位置：让 dir_rb_f = kickDir + π（在球的后方，远离球门一侧）
+    // 2. 朝向：让 theta_robot_f = kickDir（身体朝向球门）
     // 3. 方法：绕球移动调整位置 + 转向球门
+    
+    // 计算目标位置：球的后方
+    double targetDir = toPInPI(kickDir + M_PI);  // 球门的反方向
+    double deltaDir = toPInPI(targetDir - dir_rb_f);  // 需要调整的角度
     
     // 1. 计算径向速度（靠近/远离球）
     double thetar_r = dir_rb_f - theta_robot_f; 
@@ -829,7 +834,6 @@ NodeStatus Adjust::tick()
     vy = sr * sin(thetar_r); 
     
     // 2. 计算切向速度（绕球移动到正确位置）
-    //    切向方向 = 径向方向转90度
     //    deltaDir > 0: 需要逆时针绕球移动
     //    deltaDir < 0: 需要顺时针绕球移动
     double thetat_r = thetar_r + M_PI / 2;  // 逆时针切线方向
@@ -839,12 +843,11 @@ NodeStatus Adjust::tick()
     vy += tangential_speed * sin(thetat_r);
     
     // 3. 计算转向速度（让机器人朝向球门！）
-    //    ⭐ 关键：机器人应该朝向球门(kickDir)，不是朝向球！
-    //    这样机器人可以直接向前冲踢球入门
+    //    机器人应该朝向球门(kickDir)
     vtheta = toPInPI(kickDir - theta_robot_f);
     vtheta *= vtheta_factor;
     
-    // 如果已经较对准球门方向，减小绕球速度
+    // 如果已经较对准目标位置，减小绕球速度
     if (fabs(deltaDir) < 0.3) {
         vx *= 0.7;
         vy *= 0.7;
@@ -867,7 +870,8 @@ NodeStatus Adjust::tick()
     vy = cap(vy, vyLimit, -vyLimit);
     vtheta = cap(vtheta, vthetaLimit, -vthetaLimit);
     
-    log(format("deltaDir: %.2f ballYaw: %.2f vx: %.2f vy: %.2f vtheta: %.2f", deltaDir, ballYaw, vx, vy, vtheta));
+    log(format("targetDir: %.2f deltaDir: %.2f ballYaw: %.2f vx: %.2f vy: %.2f vtheta: %.2f", 
+        targetDir, deltaDir, ballYaw, vx, vy, vtheta));
     brain->client->setVelocity(vx, vy, vtheta);
     return NodeStatus::SUCCESS;
 }
