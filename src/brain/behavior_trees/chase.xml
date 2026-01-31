@@ -11,15 +11,24 @@
                   <Sequence _while="!ball_location_known" >
                      <PlaySound sound="search" />
                      <Fallback>
-                        <!-- 八字扫描 + 慢速身体旋转（并行执行） -->
+                        <!-- 优化：加速扫描和提高旋转速度 -->
                         <Parallel success_count="1">
-                           <CamLissajousScan yaw_amplitude="1.2" pitch_center="0.5" pitch_amplitude="0.5" cycle_msec="2500" />
-                           <RobotFindBall vyaw_limit="0.8" />
+                           <!-- cycle_msec: 2500→1800 加快扫描周期 -->
+                           <!-- pitch_center: 0.5→0.6 提高扫描中心，更关注远处的球 -->
+                           <!-- yaw_amplitude: 1.2→1.4 扩大扫描范围 -->
+                           <CamLissajousScan yaw_amplitude="1.4" pitch_center="0.6" pitch_amplitude="0.5" cycle_msec="1800" />
+                           <!-- vyaw_limit: 0.8→1.5 提高身体旋转速度 -->
+                           <RobotFindBall vyaw_limit="1.5" />
                         </Parallel>
                      </Fallback>
                   </Sequence>
                   <Sequence _while="ball_location_known" >
-                     <SimpleChase stop_dist="1.0" stop_angle="0.3" vx_limit="1.2" vy_limit="0.5" />
+                     <!-- 优化：提高速度限制和改进停止阈值 -->
+                     <!-- vx_limit: 1.2→1.6 提高前进速度33% -->
+                     <!-- vy_limit: 0.5→0.9 提高横向速度80%，使转弯更流畅 -->
+                     <!-- stop_dist: 1.0→0.75 更接近球时才停止 -->
+                     <!-- stop_angle: 0.3→0.2 允许更小的角度误差 -->
+                     <SimpleChase stop_dist="0.75" stop_angle="0.2" vx_limit="1.6" vy_limit="0.9" />
                      <PlaySound sound="playful" _while="ball_range>=1.5" />
                      <PlaySound sound="exited" _while="ball_range<1.0" />
                   </Sequence>
