@@ -809,7 +809,7 @@ NodeStatus Adjust::tick()
     // 计算目标方向差（用于判断是否使用近距离速度）
     double tempDeltaDir = toPInPI(toPInPI(kickDir + M_PI) - dir_rb_f);
     if (fabs(tempDeltaDir) * R < NEAR_THRESHOLD) {
-        log("use near speed");
+        log("使用近距离速度");
         st = st_near;
     }
 
@@ -888,8 +888,8 @@ NodeStatus Adjust::tick()
     vy = cap(vy, vyLimit, -vyLimit);
     vtheta = cap(vtheta, vthetaLimit, -vthetaLimit);
     
-    log(format("posGood: %d deltaDir: %.2f theta_diff: %.2f vx: %.2f vy: %.2f vtheta: %.2f", 
-        positionGood, deltaDir, kickDir - theta_robot_f, vx, vy, vtheta));
+    log(format("位置: %d 角度差: %.2f(%.0f°) 朝向差: %.2f vx: %.2f vy: %.2f vtheta: %.2f", 
+        positionGood, deltaDir, deltaDir*57.3, kickDir - theta_robot_f, vx, vy, vtheta));
     brain->client->setVelocity(vx, vy, vtheta);
     return NodeStatus::SUCCESS;
 }
@@ -1045,7 +1045,7 @@ NodeStatus StrikerDecide::tick() {
     setOutput("decision_out", newDecision);
     
     // 增强日志输出
-    log(format("Decision: %s | deltaDir: %.2f (%.0f°) | ballRange: %.2f | ballYaw: %.2f | angleGood: %d | reachedKickDir: %d",
+    log(format("决策: %s | 角度差: %.2f(%.0f°) | 球距离: %.2f | 球偏角: %.2f | 角度好: %d | 到达方向: %d",
         newDecision.c_str(), deltaDir, deltaDir * 57.3, ballRange, ballYaw, angleGoodForKick, reachedKickDir));
     brain->log->logToScreen(
         "tree/Decide",
